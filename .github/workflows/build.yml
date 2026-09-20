@@ -9,7 +9,7 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Compilamos la imagen pura con Docker
+      # Compilamos la imagen limpia con Docker
       - name: Build Clean System
         run: |
           docker build -t mi-jeos-consola:latest -f ./Containerfile .
