@@ -12,24 +12,18 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Usamos Buildah para compilar tu Containerfile puro
-      - name: Build Image using Buildah
-        id: build-image
-        uses: redhat-actions/buildah-build@v3
-        with:
-          image: mi-jeos-consola
-          tags: latest
-          containerfiles: |
-            ./Containerfile
-          oci: true
+      # Usamos el motor nativo de Docker para compilar tu Containerfile limpio
+      - name: Build Image with Docker
+        run: |
+          docker build -t mi-jeos-consola:latest -f ./Containerfile .
 
-      # Exportamos el sistema operativo limpio directamente a un archivo para ti
+      # Exportamos el sistema de forma directa a un archivo comprimido
       - name: Export Image File
         run: |
-          podman save -o mi-jeos-consola.tar mi-jeos-consola:latest
+          docker save -o mi-jeos-consola.tar mi-jeos-consola:latest
           gzip mi-jeos-consola.tar
 
-      # Subimos tu archivo .tar.gz para que lo descargues con un clic
+      # Guardamos tu archivo final listo para descargar
       - name: Upload JeOS System Artifact
         uses: actions/upload-artifact@v4
         with:
