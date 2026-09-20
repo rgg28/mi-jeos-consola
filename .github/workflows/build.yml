@@ -5,26 +5,23 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Usamos el motor nativo de Docker para compilar tu Containerfile limpio
-      - name: Build Image with Docker
+      # Compilamos la imagen pura con Docker
+      - name: Build Clean System
         run: |
           docker build -t mi-jeos-consola:latest -f ./Containerfile .
 
-      # Exportamos el sistema de forma directa a un archivo comprimido
-      - name: Export Image File
+      # Guardamos el sistema en un archivo directo listo para BalenaEtcher
+      - name: Export File
         run: |
           docker save -o mi-jeos-consola.tar mi-jeos-consola:latest
           gzip mi-jeos-consola.tar
 
-      # Guardamos tu archivo final listo para descargar
-      - name: Upload JeOS System Artifact
+      # Subimos tu sistema final para descargarlo con un clic
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: mi-jeos-consola-sistema
