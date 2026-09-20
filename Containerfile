@@ -1,7 +1,10 @@
 # Usamos la base oficial y minimalista de Arch Linux (Pura y limpia)
 FROM archlinux:latest
 
-# Actualizamos repositorios e instalamos solo los drivers universales, Steam y RetroArch
+# Activamos el repositorio multilib (necesario para Steam y drivers de 32 bits)
+RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
+
+# Actualizamos repositorios e instalamos los drivers universales, Steam y RetroArch
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
     mesa lib32-mesa vulkan-radeon \
