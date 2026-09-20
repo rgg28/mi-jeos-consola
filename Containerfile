@@ -1,12 +1,18 @@
-# Usamos la base mínima oficial de Universal Blue que ya incluye drivers universales de AMD, Nvidia e Intel
-FROM ghcr.io/ublue-os/bazzite:stable
+# Usamos la base oficial y minimalista de Arch Linux (Pura y limpia)
+FROM archlinux:latest
 
-# Instalamos únicamente la interfaz de consola, emuladores y drivers de controles Bluetooth
-RUN rpm-ostree install \
-    gamescope \
-    retroarch \
-    bluez \
-    mesa-vulkan-drivers
+# Actualizamos repositorios e instalamos solo los drivers universales, Steam y RetroArch
+RUN pacman -Syu --noconfirm && \
+    pacman -S --noconfirm \
+    mesa lib32-mesa vulkan-radeon \
+    nvidia-utils lib32-nvidia-utils \
+    steam gamescope retroarch bluez \
+    xorg-server xf86-video-amdgpu
 
-# Limpiamos cachés para que la imagen final ocupe el menor espacio posible
-RUN rpm-ostree cleanup -a
+# Creamos el script para que arranque directamente en modo consola al encender
+RUN mkdir -p /etc/local.d/
+echo -e '#!/bin/bash\nGPU=$(lspci | grep -E "VGA|3D")\nif echo "$GPU" | grep -iq "AMD"; then\n    gamescope -e -- steam -tenfoot\nelif echo "$GPU" | grep -iq "NVIDIA"; then\n    export __NV_PRIME_RENDER_OFFLOAD=1\n    gamescope -e -- steam -tenfoot\nfi' > /etc/local.d/consola.start && \
+chmod +x /etc/local.d/consola.start
+
+# Limpieza absoluta de temporales para reducir el peso al mínimo
+RUN pacman -Scc --noconfirm
