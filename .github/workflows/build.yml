@@ -1,6 +1,6 @@
 name: Build My JeOS Image
 on:
-  workflow_dispatch: # Activar manualmente con el botón
+  workflow_dispatch: # Botón manual de encendido
 
 jobs:
   build:
@@ -8,16 +8,11 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Maximizamos el espacio del servidor porque las imágenes de Linux son pesadas
-      - name: Maximize Build Space
-        uses: ublue-os/remove-unwanted-software@main
-
-      # Construimos el JeOS adaptando los parámetros del sistema inmutable
+      # Usamos Buildah para compilar tu Containerfile puro
       - name: Build Image using Buildah
         id: build-image
         uses: redhat-actions/buildah-build@v3
@@ -27,13 +22,16 @@ jobs:
           containerfiles: |
             ./Containerfile
           oci: true
-          extra-args: |
-            --isolation=chroot
 
-      # Generamos el instalador .ISO final y limpio para tu USB
-      - name: Build Bootable ISO
-        uses: ublue-os/isogenerator@main
+      # Exportamos el sistema operativo limpio directamente a un archivo para ti
+      - name: Export Image File
+        run: |
+          podman save -o mi-jeos-consola.tar mi-jeos-consola:latest
+          gzip mi-jeos-consola.tar
+
+      # Subimos tu archivo .tar.gz para que lo descargues con un clic
+      - name: Upload JeOS System Artifact
+        uses: actions/upload-artifact@v4
         with:
-          image-name: mi-jeos-consola
-          installer-repo: fedora
-          installer-major-version: 40
+          name: mi-jeos-consola-sistema
+          path: mi-jeos-consola.tar.gz
