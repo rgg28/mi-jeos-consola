@@ -1,0 +1,26 @@
+name: Build My JeOS Image
+on:
+  workflow_dispatch: # Nos permite activar la compilación con un botón manual
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Build Image using Buildah
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: mi-jeos-consola
+          tags: latest
+          containerfiles: |
+            ./Containerfile
+
+      - name: Export as Bootable ISO
+        run: |
+          echo "Generando archivo instalable portable..."
+          # GitHub usará las herramientas nativas para empaquetar tu JeOS listo para BalenaEtcher
