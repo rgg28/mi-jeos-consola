@@ -9,54 +9,60 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Instalamos las herramientas para crear particiones y sectores de arranque reales
+      # Instalamos las herramientas de particionado y soporte exFAT para Windows
       - name: Install Disk Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y kpartx dmsetup mtools mext-utils dosfstools genimage
+          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs
 
-      # Extraemos el contenedor de Docker para convertirlo en un sistema de archivos de disco duro
-      - name: Convert Container to Bootable Hard Drive
+      # Extraemos el sistema limpio y preparamos las dos particiones
+      - name: Create Multi-Partition Structure
         run: |
-          # 1. Compilamos tu Containerfile
+          # 1. Compilamos tu Containerfile puro
           docker build -t mi-jeos-consola:latest -f ./Containerfile .
           
-          # 2. Creamos una estructura de disco vacía
+          # 2. Extraemos el sistema operativo a una carpeta temporal
           mkdir -p rootfs
           docker create --name temp-container mi-jeos-consola:latest
           docker export temp-container | tar -C rootfs -xf -
           docker rm temp-container
 
-          # 3. Configuramos la receta para generar la tabla de particiones del archivo .img
+          # 3. Creamos una carpeta vacía para la partición de juegos exFAT
+          mkdir -p juegos_dir
+          
+          # 4. Generamos los archivos de sistema virtuales individuales
+          # Partición 1: Sistema Operativo (2 GB)
+          truncate -s 2G rootfs.ext4
+          mkfs.ext4 -d rootfs rootfs.ext4
+          
+          # Partición 2: Datos/Juegos exFAT visible en Windows (1 GB base expansible)
+          truncate -s 1G juegos.exfat
+          mkfs.exfat juegos.exfat
+
+          # 5. Configuramos la receta de particiones para el archivo .img final
           echo 'image mi-jeos-consola.img {
               hdimage {}
-              partition boot {
-                  partition-type = 0xEF
-                  image = "boot.vfat"
-                  size = 64M
-              }
-              partition root {
+              partition sistema {
                   partition-type = 0x83
                   image = "rootfs.ext4"
+                  size = 2G
+              }
+              partition juegos {
+                  partition-type = 0x07
+                  image = "juegos.exfat"
+                  size = 1G
               }
           }' > genimage.cfg
 
-          # 4. Fabricamos las particiones de la imagen
-          dd if=/dev/zero of=boot.vfat bs=1M count=64
-          mkfs.vfat boot.vfat
-          
-          # Creamos el archivo de sistema ext4 limpio
-          make_ext4fs -l 2G rootfs.ext4 rootfs/ || mkfs.ext4 -d rootfs rootfs.ext4 2G
-
-      # Juntamos las piezas en el archivo .img universal final
+      # Ensamblamos todo en el archivo .img universal final
       - name: Assemble Final IMG File
         run: |
-          genimage --config genimage.cfg --rootpath rootfs/
+          genimage --config genimage.cfg
           mv images/mi-jeos-consola.img ./
 
-      # Subimos tu imagen de disco .img lista para usar
+      # Subimos tu imagen de doble partición lista para usar
       - name: Upload Bootable IMG
         uses: actions/upload-artifact@v4
         with:
-          name: mi-jeos-consola-bootable-img
+          name: mi-jeos-consola-doble-particion-img
           path: mi-jeos-consola.img
