@@ -12,16 +12,14 @@ RUN pacman -Syu --noconfirm && \
     steam gamescope retroarch bluez \
     xorg-server xf86-video-amdgpu parted exfatprogs
 
-# Creamos el script de arranque que expande la partición de juegos al 100% en el primer encendido
+# Creamos el script de arranque de forma limpia línea por línea para evitar errores de comillas
 RUN mkdir -p /etc/local.d/
 RUN echo '#!/bin/bash' > /etc/local.d/consola.start
-# El script detecta el tamaño real de tu USB, expande la partición exFAT al máximo y repara la estructura al vuelo
 RUN echo 'if [ ! -f /etc/expanded ]; then' >> /etc/local.d/consola.start
 RUN echo '    parted -s $(findmnt -n -o SOURCE /) resizepart 2 100%' >> /etc/local.d/consola.start
 RUN echo '    fsck.exfat -a $(findmnt -n -o SOURCE / | sed "s/[0-9]//g")2 || true' >> /etc/local.d/consola.start
 RUN echo '    touch /etc/expanded' >> /etc/local.d/consola.start
 RUN echo 'fi' >> /etc/local.d/consola.start
-# Luego inicia Steam Big Picture detectando tu gráfica Ryzen/Nvidia
 RUN echo 'GPU=$(lspci | grep -E "VGA|3D")' >> /etc/local.d/consola.start
 RUN echo 'if echo "$GPU" | grep -iq "AMD"; then' >> /etc/local.d/consola.start
 RUN echo '    gamescope -e -- steam -tenfoot' >> /etc/local.d/consola.start
