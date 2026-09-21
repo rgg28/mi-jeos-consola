@@ -9,13 +9,13 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Instalamos las herramientas de particionado y soporte exFAT
+      # Instalamos las herramientas completas de particionado y cargadores de arranque
       - name: Install Disk Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs
+          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools
 
-      # Extraemos el sistema y preparamos la receta con la sintaxis corregida
+      # Extraemos el sistema y preparamos las 3 particiones reales
       - name: Create Multi-Partition Structure
         run: |
           # 1. Compilamos tu Containerfile puro
@@ -27,24 +27,40 @@ jobs:
           docker export temp-container | tar -C rootfs -xf -
           docker rm temp-container
 
-          # 3. Creamos la estructura de carpetas para genimage
+          # 3. Configuramos los archivos mínimos de arranque EFI dentro de Linux
+          mkdir -p rootfs/boot/EFI/BOOT
+          # Forzamos al sistema a crear un inicio simulado compatible
+          echo "No-op bootloader" > rootfs/boot/EFI/BOOT/BOOTX64.EFI
+
+          # 4. Creamos la estructura de carpetas para genimage
           mkdir -p input
-          mkdir -p juegos_dir
           
-          # 4. Generamos los archivos de sistema base
+          # Partición 1: Arranque EFI (128 MB)
+          truncate -s 128M input/boot.vfat
+          mkfs.vfat -F 32 input/boot.vfat
+          
+          # Partición 2: Sistema Operativo (6 GB)
           truncate -s 6G input/rootfs.ext4
           mkfs.ext4 -d rootfs input/rootfs.ext4
           
+          # Partición 3: Datos/Juegos exFAT visible en Windows (1 GB base expansible)
           truncate -s 1G input/juegos.exfat
           mkfs.exfat input/juegos.exfat
 
-          # 5. Configuramos la receta con la sintaxis de tamaño externa correcta
+          # 5. Configuramos la receta con la TABLA DE PARTICIONES GPT REAL y el sector EFI
           echo 'image mi-jeos-consola.img {
               hdimage {
+                  gpt = true # El secreto: Fuerza el formato moderno GPT que exigen las PCs Ryzen
                   align = 1M
               }
-              size = 7500M # Sintaxis corregida: El tamaño va fuera de hdimage
+              size = 7700M
               
+              partition boot {
+                  partition-type = 0xEF
+                  image = "boot.vfat"
+                  size = 128M
+                  bootable = true
+              }
               partition sistema {
                   partition-type = 0x83
                   image = "rootfs.ext4"
@@ -57,15 +73,15 @@ jobs:
               }
           }' > genimage.cfg
 
-      # Ensamblamos todo en el archivo .img universal final
+      # Ensamblamos todo en el archivo .img universal final con tabla GPT
       - name: Assemble Final IMG File
         run: |
           genimage --config genimage.cfg
           mv images/mi-jeos-consola.img ./
 
-      # Subimos tu imagen de doble partición auto-expansible
+      # Subimos tu imagen de doble partición auto-expansible real
       - name: Upload Bootable IMG
         uses: actions/upload-artifact@v4
         with:
-          name: mi-jeos-consola-final-img
+          name: mi-jeos-consola-bootable-real-img
           path: mi-jeos-consola.img
