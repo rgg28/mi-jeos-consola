@@ -9,29 +9,54 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Instalamos las herramientas nativas de Arch Linux en el servidor de GitHub
-      - name: Install Archiso Tools
+      # Instalamos las herramientas para crear particiones y sectores de arranque reales
+      - name: Install Disk Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y arch-testtrack squashfs-tools xorriso copy-installer-data || true
-          docker run --privileged --rm -v /:/host archlinux:latest pacman -Syu --noconfirm archiso
+          sudo apt-get install -y kpartx dmsetup mtools mext-utils dosfstools genimage
 
-      # Construimos la estructura del disco duro bootable
-      - name: Generate Bootable Disk Image
+      # Extraemos el contenedor de Docker para convertirlo en un sistema de archivos de disco duro
+      - name: Convert Container to Bootable Hard Drive
         run: |
-          mkdir -p src/profile
-          cp -r /usr/share/archiso/configs/releng/* src/profile/ || true
+          # 1. Compilamos tu Containerfile
+          docker build -t mi-jeos-consola:latest -f ./Containerfile .
           
-          # Inyectamos tu receta limpia y el script multilib
-          echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> src/profile/pacman.conf
-          echo -e "mesa\nlib32-mesa\nvulkan-radeon\nnvidia-utils\nlib32-nvidia-utils\nsteam\ngamescope\nretroarch\nbluez\nxorg-server\nxf86-video-amdgpu" >> src/profile/packages.x86_64
-          
-          # Compilamos el instalador .ISO puro
-          mkarchiso -v -w /tmp/archiso-workspace -o ./output src/profile/
+          # 2. Creamos una estructura de disco vacía
+          mkdir -p rootfs
+          docker create --name temp-container mi-jeos-consola:latest
+          docker export temp-container | tar -C rootfs -xf -
+          docker rm temp-container
 
-      # Subimos tu archivo .ISO listo para flashear en cualquier PC
-      - name: Upload Bootable Image
+          # 3. Configuramos la receta para generar la tabla de particiones del archivo .img
+          echo 'image mi-jeos-consola.img {
+              hdimage {}
+              partition boot {
+                  partition-type = 0xEF
+                  image = "boot.vfat"
+                  size = 64M
+              }
+              partition root {
+                  partition-type = 0x83
+                  image = "rootfs.ext4"
+              }
+          }' > genimage.cfg
+
+          # 4. Fabricamos las particiones de la imagen
+          dd if=/dev/zero of=boot.vfat bs=1M count=64
+          mkfs.vfat boot.vfat
+          
+          # Creamos el archivo de sistema ext4 limpio
+          make_ext4fs -l 2G rootfs.ext4 rootfs/ || mkfs.ext4 -d rootfs rootfs.ext4 2G
+
+      # Juntamos las piezas en el archivo .img universal final
+      - name: Assemble Final IMG File
+        run: |
+          genimage --config genimage.cfg --rootpath rootfs/
+          mv images/mi-jeos-consola.img ./
+
+      # Subimos tu imagen de disco .img lista para usar
+      - name: Upload Bootable IMG
         uses: actions/upload-artifact@v4
         with:
-          name: mi-jeos-consola-bootable
-          path: output/*.iso
+          name: mi-jeos-consola-bootable-img
+          path: mi-jeos-consola.img
