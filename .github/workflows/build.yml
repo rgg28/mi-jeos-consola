@@ -15,7 +15,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs
 
-      # Extraemos el sistema y preparamos la receta de particiones fijas para el empaquetado
+      # Extraemos el sistema y preparamos la receta con la sintaxis corregida
       - name: Create Multi-Partition Structure
         run: |
           # 1. Compilamos tu Containerfile puro
@@ -38,12 +38,13 @@ jobs:
           truncate -s 1G input/juegos.exfat
           mkfs.exfat input/juegos.exfat
 
-          # 5. Configuramos la receta definiendo el tamaño total de la imagen base (7.5 GB)
+          # 5. Configuramos la receta con la sintaxis de tamaño externa correcta
           echo 'image mi-jeos-consola.img {
               hdimage {
                   align = 1M
-                  size = 7500M # Tamaño total del archivo contenedor requerido por genimage
               }
+              size = 7500M # Sintaxis corregida: El tamaño va fuera de hdimage
+              
               partition sistema {
                   partition-type = 0x83
                   image = "rootfs.ext4"
@@ -52,17 +53,17 @@ jobs:
               partition juegos {
                   partition-type = 0x07
                   image = "juegos.exfat"
-                  size = 1300M # Toma el resto del espacio del contenedor comprimido
+                  size = 1300M
               }
           }' > genimage.cfg
 
-      # Ensamblamos todo en el archivo .img universal definitivo
+      # Ensamblamos todo en el archivo .img universal final
       - name: Assemble Final IMG File
         run: |
           genimage --config genimage.cfg
           mv images/mi-jeos-consola.img ./
 
-      # Subimos tu imagen de doble partición lista para usar
+      # Subimos tu imagen de doble partición auto-expansible
       - name: Upload Bootable IMG
         uses: actions/upload-artifact@v4
         with:
