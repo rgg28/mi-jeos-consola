@@ -15,7 +15,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs
 
-      # Extraemos el sistema y preparamos la receta con auto-expansión
+      # Extraemos el sistema y preparamos la receta de particiones fijas para el empaquetado
       - name: Create Multi-Partition Structure
         run: |
           # 1. Compilamos tu Containerfile puro
@@ -31,18 +31,18 @@ jobs:
           mkdir -p input
           mkdir -p juegos_dir
           
-          # 4. Generamos los archivos base mínimos
+          # 4. Generamos los archivos de sistema base
           truncate -s 6G input/rootfs.ext4
           mkfs.ext4 -d rootfs input/rootfs.ext4
           
-          # La partición de juegos se crea con un tamaño mínimo inicial
-          truncate -s 100M input/juegos.exfat
+          truncate -s 1G input/juegos.exfat
           mkfs.exfat input/juegos.exfat
 
-          # 5. Modificamos la receta agregando la regla de AUTO-RESIZE
+          # 5. Configuramos la receta definiendo el tamaño total de la imagen base (7.5 GB)
           echo 'image mi-jeos-consola.img {
               hdimage {
                   align = 1M
+                  size = 7500M # Tamaño total del archivo contenedor requerido por genimage
               }
               partition sistema {
                   partition-type = 0x83
@@ -52,7 +52,7 @@ jobs:
               partition juegos {
                   partition-type = 0x07
                   image = "juegos.exfat"
-                  autoresize = true # El secreto: Se expande al 100% de cualquier USB al arrancar
+                  size = 1300M # Toma el resto del espacio del contenedor comprimido
               }
           }' > genimage.cfg
 
@@ -62,9 +62,9 @@ jobs:
           genimage --config genimage.cfg
           mv images/mi-jeos-consola.img ./
 
-      # Subimos tu imagen auto-expansible lista para usar
+      # Subimos tu imagen de doble partición lista para usar
       - name: Upload Bootable IMG
         uses: actions/upload-artifact@v4
         with:
-          name: mi-jeos-consola-auto-expansible-img
+          name: mi-jeos-consola-final-img
           path: mi-jeos-consola.img
