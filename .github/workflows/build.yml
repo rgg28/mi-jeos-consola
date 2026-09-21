@@ -27,7 +27,7 @@ jobs:
           docker export temp-container | tar -C rootfs -xf -
           docker rm temp-container
 
-          # 3. Preparamos el cargador de arranque EFI real en una carpeta limpia para genimage
+          # 3. Preparamos el cargador de arranque EFI real
           mkdir -p bootfs/EFI/BOOT
           if [ -f rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi ]; then
             cp rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi bootfs/EFI/BOOT/BOOTX64.EFI
@@ -35,10 +35,11 @@ jobs:
             echo "Bootloader" > bootfs/EFI/BOOT/BOOTX64.EFI
           fi
 
-          # 4. Generamos los archivos de sistema base en la carpeta input
+          # 4. Generamos las carpetas requeridas por genimage
           mkdir -p input
+          mkdir -p root # Carpeta raíz vacía requerida obligatoriamente por genimage
           
-          # Dejamos que genimage maneje la estructura de la partición de arranque desde la carpeta bootfs
+          # Copiamos la estructura de arranque
           cp -r bootfs input/boot_dir
           
           # Partición 2: Sistema Operativo (6 GB)
