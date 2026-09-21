@@ -15,7 +15,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs
 
-      # Extraemos el sistema limpio y preparamos las dos particiones
+      # Extraemos el sistema limpio y preparamos las dos particiones con espacio suficiente
       - name: Create Multi-Partition Structure
         run: |
           # 1. Compilamos tu Containerfile puro
@@ -30,9 +30,9 @@ jobs:
           # 3. Creamos una carpeta vacía para la partición de juegos exFAT
           mkdir -p juegos_dir
           
-          # 4. Generamos los archivos de sistema virtuales individuales
-          # Partición 1: Sistema Operativo (2 GB)
-          truncate -s 2G rootfs.ext4
+          # 4. Generamos los archivos de sistema virtuales individuales con espacio de sobra
+          # Partición 1: Sistema Operativo ampliado a 6 GB para evitar que se llene al compilar
+          truncate -s 6G rootfs.ext4
           mkfs.ext4 -d rootfs rootfs.ext4
           
           # Partición 2: Datos/Juegos exFAT visible en Windows (1 GB base expansible)
@@ -45,7 +45,7 @@ jobs:
               partition sistema {
                   partition-type = 0x83
                   image = "rootfs.ext4"
-                  size = 2G
+                  size = 6G
               }
               partition juegos {
                   partition-type = 0x07
