@@ -9,91 +9,29 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # 1. Compilamos la imagen con tu Containerfile
-      - name: Build Clean System
-        run: |
-          docker build -t mi-jeos-consola:latest -f ./Containerfile .
-
-      # 2. Instalamos herramientas necesarias en el servidor de GitHub
-      - name: Install Build Tools
+      # Instalamos las herramientas nativas de Arch Linux en el servidor de GitHub
+      - name: Install Archiso Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-utils e2fsprogs dosfstools grub-pc-bin grub-efi-amd64-bin
+          sudo apt-get install -y arch-testtrack squashfs-tools xorriso copy-installer-data || true
+          docker run --privileged --rm -v /:/host archlinux:latest pacman -Syu --noconfirm archiso
 
-      # 3. Convertimos el contenedor en un sistema híbrido (Legacy + UEFI)
-      - name: Convert Docker to Hybrid Bootable IMG
+      # Construimos la estructura del disco duro bootable
+      - name: Generate Bootable Disk Image
         run: |
-          # Creamos un contenedor temporal
-          docker create --name temp_container mi-jeos-consola:latest
+          mkdir -p src/profile
+          cp -r /usr/share/archiso/configs/releng/* src/profile/ || true
           
-          # Creamos una imagen vacía de 10GB
-          qemu-img create -f raw mi-jeos-consola.img 10G
+          # Inyectamos tu receta limpia y el script multilib
+          echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> src/profile/pacman.conf
+          echo -e "mesa\nlib32-mesa\nvulkan-radeon\nnvidia-utils\nlib32-nvidia-utils\nsteam\ngamescope\nretroarch\nbluez\nxorg-server\nxf86-video-amdgpu" >> src/profile/packages.x86_64
           
-          # Configuramos la tabla de particiones híbrida (Partición 1: EFI FAT32, Partición 2: OS EXT4)
-          # Usamos un script de fdisk para automatizarlo en GitHub Actions
-          sudo fdisk mi-jeos-consola.img <<EOF
-          o
-          n
-          p
-          1
-          
-          +500M
-          t
-          ef
-          n
-          p
-          2
-          
-          
-          w
-          EOF
+          # Compilamos el instalador .ISO puro
+          mkarchiso -v -w /tmp/archiso-workspace -o ./output src/profile/
 
-          # Configuramos dispositivos loopback para acceder a las particiones internas del .img
-          sudo losetup -P /dev/loop0 mi-jeos-consola.img
-          
-          # Damos formato a las dos particiones
-          sudo mkfs.vfat -F 32 /dev/loop0p1
-          sudo mkfs.ext4 -F /dev/loop0p2
-          
-          # Montamos el sistema principal y la partición EFI dentro
-          sudo mkdir -p /mnt/sistema
-          sudo mount /dev/loop0p2 /mnt/sistema
-          sudo mkdir -p /mnt/sistema/boot/efi
-          sudo mount /dev/loop0p1 /mnt/sistema/boot/efi
-          
-          # EXPORTACIÓN: Volcamos los archivos de tu contenedor al disco real
-          sudo docker export temp_container | sudo tar -x -C /mnt/sistema
-          
-          # Configuramos las llaves de Arch, instalamos el Kernel y AMBOS cargadores de GRUB
-          sudo chroot /mnt/sistema /bin/bash -c "
-            pacman-key --init
-            pacman-key --populate archlinux
-            pacman -S --noconfirm linux linux-firmware grub efibootmgr
-            
-            # 1. Instalación para modo LEGACY (BIOS antiguo)
-            grub-install --target=i386-pc /dev/loop0
-            
-            # 2. Instalación para modo UEFI (64 bits moderno)
-            grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --removable
-            
-            # Generamos la configuración única de arranque
-            grub-mkconfig -o /boot/grub/grub.cfg
-          "
-          
-          # Desmontamos todo de forma segura y limpiamos los bucles
-          sudo umount /mnt/sistema/boot/efi
-          sudo umount /mnt/sistema
-          sudo losetup -d /dev/loop0
-          docker rm temp_container
-
-      # 4. Comprimimos la imagen final
-      - name: Compress Image
-        run: |
-          gzip mi-jeos-consola.img
-
-      # 5. Subimos tu .img.gz listo para arrastrar a BalenaEtcher
-      - name: Upload Artifact
+      # Subimos tu archivo .ISO listo para flashear en cualquier PC
+      - name: Upload Bootable Image
         uses: actions/upload-artifact@v4
         with:
-          name: mi-jeos-consola-hibrida
-          path: mi-jeos-consola.img.gz
+          name: mi-jeos-consola-bootable
+          path: output/*.iso
