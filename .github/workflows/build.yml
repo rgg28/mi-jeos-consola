@@ -27,17 +27,18 @@ jobs:
           docker export temp-container | tar -C rootfs -xf -
           docker rm temp-container
 
-          # 3. Creamos una carpeta vacía para la partición de juegos exFAT
+          # 3. Creamos la estructura de carpetas que exige genimage
+          mkdir -p input
           mkdir -p juegos_dir
           
-          # 4. Generamos los archivos de sistema virtuales individuales con espacio de sobra
-          # Partición 1: Sistema Operativo ampliado a 6 GB para evitar que se llene al compilar
-          truncate -s 6G rootfs.ext4
-          mkfs.ext4 -d rootfs rootfs.ext4
+          # 4. Generamos los archivos de sistema virtuales dentro de la carpeta input
+          # Partición 1: Sistema Operativo (6 GB)
+          truncate -s 6G input/rootfs.ext4
+          mkfs.ext4 -d rootfs input/rootfs.ext4
           
-          # Partición 2: Datos/Juegos exFAT visible en Windows (1 GB base expansible)
-          truncate -s 1G juegos.exfat
-          mkfs.exfat juegos.exfat
+          # Partición 2: Datos/Juegos exFAT visible en Windows (1 GB base)
+          truncate -s 1G input/juegos.exfat
+          mkfs.exfat input/juegos.exfat
 
           # 5. Configuramos la receta de particiones para el archivo .img final
           echo 'image mi-jeos-consola.img {
