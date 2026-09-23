@@ -21,32 +21,30 @@ jobs:
           # 1. Compilamos tu Containerfile puro
           docker build -t mi-jeos-consola:latest -f ./Containerfile .
           
-          # 2. Extraemos el sistema operativo a una carpeta temporal
+          # 2. Extraemos el sistema operativo a una carpeta temporal con permisos root
           mkdir -p rootfs
           docker create --name temp-container mi-jeos-consola:latest
-          docker export temp-container | tar -C rootfs -xf -
+          sudo docker export temp-container | sudo tar -C rootfs -xf -
           docker rm temp-container
 
           # 3. Preparamos el cargador de arranque EFI real y el menú de inicio obligatorio
-          mkdir -p bootfs/EFI/BOOT
-          mkdir -p bootfs/loader/entries
+          sudo mkdir -p bootfs/EFI/BOOT
+          sudo mkdir -p bootfs/loader/entries
           
           # Copiamos el binario de arranque integrado en Arch
           if [ -f rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi ]; then
-            cp rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi bootfs/EFI/BOOT/BOOTX64.EFI
+            sudo cp rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi bootfs/EFI/BOOT/BOOTX64.EFI
           else
-            echo "Bootloader" > bootfs/EFI/BOOT/BOOTX64.EFI
+            sudo echo "Bootloader" > bootfs/EFI/BOOT/BOOTX64.EFI
           fi
 
-          # Creamos el archivo de configuración general del menú
-          echo -e "default arch.conf\ntimeout 2" > bootfs/loader/loader.conf
-          
-          # Creamos la orden de arranque para que cargue tu sistema de 6 GB directamente
-          echo -e "title Arch_JeOS_Consola\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet" > bootfs/loader/entries/arch.conf
+          # Creamos los archivos de configuración del menú
+          sudo echo -e "default arch.conf\ntimeout 2" > bootfs/loader/loader.conf
+          sudo echo -e "title Arch_JeOS_Consola\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet" > bootfs/loader/entries/arch.conf
 
-          # Copiamos el Kernel y el mapa de memoria de Arch Linux a la partición de arranque para que la BIOS pueda leerlos
-          cp rootfs/boot/vmlinuz-linux bootfs/ || true
-          cp rootfs/boot/initramfs-linux.img bootfs/ || true
+          # Copiamos el Kernel y la ramdisk reales ahora que sí están instalados
+          sudo cp rootfs/boot/vmlinuz-linux bootfs/ || true
+          sudo cp rootfs/boot/initramfs-linux.img bootfs/ || true
 
           # 4. Generamos las carpetas requeridas por genimage
           mkdir -p input
@@ -55,11 +53,11 @@ jobs:
           # Copiamos la estructura de arranque final
           cp -r bootfs input/boot_dir
           
-          # Partición 2: Sistema Operativo (6 GB)
+          # Partición 2: Sistema Operativo (6 GB) ejecutado con sudo para evitar bloqueos
           truncate -s 6G input/rootfs.ext4
-          mkfs.ext4 -d rootfs input/rootfs.ext4
+          sudo mkfs.ext4 -d rootfs input/rootfs.ext4
           
-          # Partición 3: Datos/Juegos exFAT visible en Windows (1 GB base expansible)
+          # Partición 3: Datos/Juegos exFAT visible en Windows (1 GB base)
           truncate -s 1G input/juegos.exfat
           mkfs.exfat input/juegos.exfat
 
@@ -110,7 +108,7 @@ jobs:
           genimage --config genimage.cfg
           mv images/mi-jeos-consola.img ./
 
-      # Subimos tu imagen definitiva con cargador de menú integrado
+      # Subimos tu imagen definitiva con tabla GPT autoiniciable
       - name: Upload Bootable IMG
         uses: actions/upload-artifact@v4
         with:
