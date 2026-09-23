@@ -4,15 +4,16 @@ FROM archlinux:latest
 # Activamos el repositorio multilib (necesario para Steam y drivers de 32 bits)
 RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
 
-# Actualizamos repositorios e instalamos los drivers universales, Steam, RetroArch y herramientas de disco
+# Actualizamos e instalamos los componentes junto al Kernel oficial de Linux
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
+    linux \
     mesa lib32-mesa vulkan-radeon \
     nvidia-utils lib32-nvidia-utils \
     steam gamescope retroarch bluez \
     xorg-server xf86-video-amdgpu parted exfatprogs
 
-# Creamos el script de arranque de forma limpia línea por línea para evitar errores de comillas
+# Creamos el script de arranque de forma limpia línea por línea
 RUN mkdir -p /etc/local.d/
 RUN echo '#!/bin/bash' > /etc/local.d/consola.start
 RUN echo 'if [ ! -f /etc/expanded ]; then' >> /etc/local.d/consola.start
