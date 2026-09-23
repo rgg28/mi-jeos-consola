@@ -38,11 +38,11 @@ jobs:
             echo "Bootloader" | sudo tee bootfs/EFI/BOOT/BOOTX64.EFI > /dev/null
           fi
 
-          # Creamos los archivos de configuración usando tee para evitar el "Permission denied"
+          # Creamos los archivos de configuración usando tee para evitar bloqueos
           echo -e "default arch.conf\ntimeout 2" | sudo tee bootfs/loader/loader.conf > /dev/null
           echo -e "title Arch_JeOS_Consola\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet" | sudo tee bootfs/loader/entries/arch.conf > /dev/null
 
-          # Copiamos el Kernel y la ramdisk reales ahora que sí están instalados
+          # Copiamos el Kernel y la ramdisk usando sudo para evitar el Permission denied
           sudo cp rootfs/boot/vmlinuz-linux bootfs/ || true
           sudo cp rootfs/boot/initramfs-linux.img bootfs/ || true
 
@@ -50,8 +50,8 @@ jobs:
           mkdir -p input
           mkdir -p root
           
-          # Copiamos la estructura de arranque final
-          cp -r bootfs input/boot_dir
+          # Copiamos la estructura de arranque final usando sudo para arrastrar los permisos correctos
+          sudo cp -r bootfs input/boot_dir
           
           # Partición 2: Sistema Operativo (6 GB) ejecutado con sudo para evitar bloqueos
           truncate -s 6G input/rootfs.ext4
@@ -102,11 +102,12 @@ jobs:
               }
           }' > genimage.cfg
 
-      # Ensamblamos todo en el archivo .img universal final
+      # Ensamblamos todo en el archivo .img universal final ejecutando genimage con sudo
       - name: Assemble Final IMG File
         run: |
-          genimage --config genimage.cfg
-          mv images/mi-jeos-consola.img ./
+          sudo genimage --config genimage.cfg
+          sudo mv images/mi-jeos-consola.img ./
+          sudo chmod 777 mi-jeos-consola.img
 
       # Subimos tu imagen definitiva con tabla GPT autoiniciable
       - name: Upload Bootable IMG
