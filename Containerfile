@@ -5,7 +5,7 @@ FROM archlinux:latest
 RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
 
 # Actualizamos e instalamos los componentes junto al Kernel oficial y sudo
-# Se agregó ntfs-3g para compatibilidad total con discos de Windows
+# Se agregó ntfs-3g para dar soporte a la lectura/escritura de discos de Windows
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
     linux linux-firmware \
@@ -35,24 +35,11 @@ RUN echo "root:root" | chpasswd && \
 RUN mkdir -p /etc/systemd/system/getty@tty1.service.d/ && \
     echo -e "[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin consola --noclear %I \$TERM" > /etc/systemd/system/getty@tty1.service.d/override.conf
 
-# === Automontaje Inteligente de Juegos (Portable + Disco Windows NTFS) ===
-# Creamos los puntos de montaje limpios
+# === Puntos de Montaje para Juegos (Gestionados externamente por el Workflow) ===
+# Creamos los directorios vacíos que el archivo fstab del workflow utilizará para montar las unidades
 RUN mkdir -p /home/consola/juegos && \
-    mkdir -p /home/consola/juegos_windows
-
-# Generamos el montaje dinámico seguro de la Partición 3 (Ignora bloqueos si no se encuentra en 5 segundos)
-RUN echo 'DISK=$(findmnt -n -o SOURCE / | sed -E "s/p?[0-9]+$//")' > /tmp/setup_fstab.sh && \
-    echo 'PART=$(printf "%sp3" "$DISK")' >> /tmp/setup_fstab.sh && \
-    echo 'if [ -b "$PART" ]; then UUID_DYNAMIC=$(blkid -o value -s PARTUUID "$PART"); else UUID_DYNAMIC="ERR"; fi' >> /tmp/setup_fstab.sh && \
-    echo 'echo "PARTUUID=${UUID_DYNAMIC} /home/consola/juegos exfat defaults,noatime,uid=1000,gid=985,nofail,x-systemd.device-timeout=5s 0 0" >> /etc/fstab' >> /tmp/setup_fstab.sh && \
-    bash /tmp/setup_fstab.sh && rm /tmp/setup_fstab.sh
-
-# Agregamos el montaje para el disco NTFS de Windows buscando la etiqueta "Juegos"
-# Si arrancas en una PC sin este disco, el sistema ignorará el error tras 3 segundos y previene pantallas de emergencia
-RUN echo "LABEL=Juegos /home/consola/juegos_windows ntfs3 defaults,noatime,uid=1000,gid=985,umask=000,nofail,x-systemd.device-timeout=3s 0 0" >> /etc/fstab
-
-# Aseguramos los permisos de propiedad de los directorios de juegos
-RUN chown -R consola:users /home/consola/juegos /home/consola/juegos_windows
+    mkdir -p /home/consola/juegos_windows && \
+    chown -R consola:users /home/consola/juegos /home/consola/juegos_windows
 
 # === Creación del Script de Arranque y Configuración de Pantalla ===
 RUN mkdir -p /etc/local.d/
