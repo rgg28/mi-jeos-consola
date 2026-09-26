@@ -27,6 +27,26 @@ jobs:
           sudo docker export temp-container | sudo tar -C rootfs -xf -
           docker rm temp-container
 
+          # =========================================================================
+          # CORRECCIÓN DE FSTAB: Inyectamos el PARTUUID real que genimage usará abajo.
+          # Usamos las minúsculas exactas y añadimos nofail para evitar bloqueos.
+          # =========================================================================
+          sudo mkdir -p rootfs/home/consola/juegos
+          sudo mkdir -p rootfs/home/consola/juegos_windows
+          
+          # Limpiamos remanentes erróneos del fstab e inyectamos la configuración definitiva
+          sudo sed -i '/juegos/d' rootfs/etc/fstab || true
+          
+          # Partición interna exFAT del pendrive/disco portable
+          echo "PARTUUID=ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 /home/consola/juegos exfat defaults,noatime,uid=1000,gid=985,nofail,x-systemd.device-timeout=5s 0 0" | sudo tee -a rootfs/etc/fstab > /dev/null
+          
+          # Partición NTFS de Windows (Buscando la etiqueta "Juegos")
+          echo "LABEL=Juegos /home/consola/juegos_windows ntfs3 defaults,noatime,uid=1000,gid=985,umask=000,nofail,x-systemd.device-timeout=3s 0 0" | sudo tee -a rootfs/etc/fstab > /dev/null
+          
+          # Corregimos los permisos dentro del sistema de archivos extraído
+          sudo chown -R 1000:100 rootfs/home/consola/juegos rootfs/home/consola/juegos_windows
+          # =========================================================================
+
           # 3. Preparamos el cargador de arranque EFI real y el menú de inicio obligatorio
           sudo mkdir -p bootfs/EFI/BOOT
           sudo mkdir -p bootfs/loader/entries
@@ -40,6 +60,7 @@ jobs:
 
           # Creamos los archivos de configuración usando tee para evitar bloqueos
           echo -e "default arch.conf\ntimeout 2" | sudo tee bootfs/loader/loader.conf > /dev/null
+          # Nota: Aseguramos el PARTUUID en minúsculas en los parámetros del Kernel
           echo -e "title Arch_JeOS_Consola\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet" | sudo tee bootfs/loader/entries/arch.conf > /dev/null
 
           # Copiamos el Kernel y la ramdisk usando sudo para evitar el Permission denied
