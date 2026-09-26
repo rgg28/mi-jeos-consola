@@ -5,8 +5,6 @@ FROM archlinux:latest
 RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
 
 # Actualizamos e instalamos los componentes junto al Kernel oficial y sudo
-# Agregamos: bluez-utils (herramientas BT), networkmanager (Wi-Fi/Red), 
-# linux-firmware (drivers de accesorios) y game-devices-udev (soporte mandos)
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
     linux linux-firmware \
@@ -37,12 +35,12 @@ RUN mkdir -p /etc/systemd/system/getty@tty1.service.d/ && \
 RUN mkdir -p /etc/local.d/
 RUN echo '#!/bin/bash' > /etc/local.d/consola.start
 
-# Script de expansión de almacenamiento (Partición 3 - Juegos) ejecutado vía sudo (sin contraseña)
+# === [CORREGIDO] Script de expansión de almacenamiento para la Partición 3 ===
 RUN echo 'if [ ! -f /etc/expanded ]; then' >> /etc/local.d/consola.start
 RUN echo '    DISK=$(findmnt -n -o SOURCE / | sed -E "s/p?[0-9]+$//")' >> /etc/local.d/consola.start
 RUN echo '    sudo parted -s "$DISK" resizepart 3 100%' >> /etc/local.d/consola.start
-RUN echo '    sudo touch /etc/expanded' >> /etc/local.d/consola.start
-RUN fi' >> /etc/local.d/consola.start
+RUN echo '    touch /etc/expanded' >> /etc/local.d/consola.start
+RUN echo 'fi' >> /etc/local.d/consola.start
 
 # Configuración del entorno gráfico y lanzamiento seguro de Steam GamepadUI
 RUN echo 'export XDG_RUNTIME_DIR=/run/user/$(id -u)' >> /etc/local.d/consola.start
