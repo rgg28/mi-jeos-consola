@@ -5,15 +5,14 @@ FROM archlinux:latest
 RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
 
 # Actualizamos e instalamos los componentes junto al Kernel oficial y sudo
-# Incluye soporte nativo de hardware, mandos, conectividad, PipeWire para audio,
-# y 'seatd' que es fundamental para que gamescope tome el control gráfico sin entorno de escritorio.
+# Se removió game-devices-udev por estar en AUR y se estabilizaron los drivers de video fundamentales
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
     linux linux-firmware \
     mesa lib32-mesa vulkan-radeon \
-    nvidia-utils lib32-nvidia-utils \
+    nvidia-utils lib32-nvidia-utils libvdpau libva-utils \
     steam gamescope retroarch \
-    bluez bluez-utils networkmanager game-devices-udev seatd \
+    bluez bluez-utils networkmanager seatd \
     xorg-server xf86-video-amdgpu parted exfatprogs sudo \
     pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber
 
@@ -26,7 +25,6 @@ RUN echo "LANG=es_AR.UTF-8" > /etc/locale.conf
 RUN ln -sf /usr/share/zoneinfo/America/Argentina/Tucuman /etc/localtime
 
 # === Creación del usuario 'consola' SIN CONTRASEÑA con sudo habilitado ===
-# Se lo añade al grupo 'seat' para que tenga permisos nativos de ejecución gráfica directa
 RUN useradd -m -g users -G wheel,video,input,seat -s /bin/bash consola && \
     passwd -d consola && \
     echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" >> /etc/sudoers
@@ -52,7 +50,6 @@ RUN echo '    touch /etc/expanded' >> /etc/local.d/consola.start
 RUN echo 'fi' >> /etc/local.d/consola.start
 
 # Configuración del entorno gráfico y lanzamiento seguro de Steam GamepadUI
-# Se añade la variable obligatoria de renderizado para sistemas sin entorno de escritorio (seatd)
 RUN echo 'export XDG_RUNTIME_DIR=/run/user/$(id -u)' >> /etc/local.d/consola.start
 RUN echo 'export LIBSEAT_BACKEND=builtin' >> /etc/local.d/consola.start
 RUN echo 'GPU=$(lspci | grep -E "VGA|3D")' >> /etc/local.d/consola.start
