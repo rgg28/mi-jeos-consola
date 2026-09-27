@@ -31,19 +31,16 @@ jobs:
           sudo chroot rootfs /bin/bash -c "
             pacman-key --init && pacman-key --populate archlinux
             pacman -Syu --noconfirm
-            pacman -S --noconfirm gnu-free-fonts glibc glibc-locales
-            pacman -S --noconfirm linux linux-firmware mkinitcpio parted mesa lib32-mesa vulkan-radeon vulkan-swrast nvidia-utils libvdpau libva-utils pciutils steam gamescope retroarch bluez bluez-utils networkmanager seatd xorg-server xorg-xinit xorg-xrandr xf86-video-amdgpu exfatprogs ntfs-3g fuse2 sudo pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber mangohud lib32-mangohud gamemode lib32-gamemode dbus polkit
+            pacman -S --noconfirm gnu-free-fonts glibc glibc-locales linux linux-firmware mkinitcpio parted mesa lib32-mesa vulkan-radeon vulkan-swrast nvidia-utils libvdpau libva-utils pciutils steam gamescope retroarch bluez bluez-utils networkmanager seatd xorg-server xorg-xinit xorg-xrandr xf86-video-amdgpu exfatprogs ntfs-3g fuse2 sudo pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber mangohud lib32-mangohud gamemode lib32-gamemode dbus polkit
             systemctl enable NetworkManager bluetooth seatd dbus
           "
 
           sudo chroot rootfs /bin/bash -c "
-            echo 'es_AR.UTF-8 UTF-8' > /etc/locale.gen
-            locale-gen
+            echo 'es_AR.UTF-8 UTF-8' > /etc/locale.gen && locale-gen
             echo 'LANG=es_AR.UTF-8' > /etc/locale.conf
             ln -sf /usr/share/zoneinfo/America/Argentina/Tucuman /etc/localtime
             echo 'root:root' | chpasswd
-            useradd -m -g users -G wheel,video,input,seat -s /bin/bash consola
-            passwd -d consola
+            useradd -m -g users -G wheel,video,input,seat -s /bin/bash consola && passwd -d consola
             echo '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' >> /etc/sudoers
             setcap 'cap_sys_nice+ep' /usr/bin/gamescope
           "
@@ -56,6 +53,7 @@ jobs:
           sudo sed -i 's/^MODULES=()/MODULES=(amdgpu i915)/' rootfs/etc/mkinitcpio.conf
           sudo chroot rootfs /bin/bash -c "mkinitcpio -P"
           sudo umount -R rootfs/dev rootfs/proc rootfs/sys
+
       - name: Inject Custom Scripts and Bootloader
         run: |
           sudo tee rootfs/home/consola/arrancar_steam.sh > /dev/null << 'EOF'
@@ -64,17 +62,14 @@ jobs:
           if [ ! -f "$TESTIGO" ]; then
               DISK=$(findmnt -n -o SOURCE / | sed -E 's/(p[0-9]| [0-9])$//' | sed -E 's/[0-9]+$//')
               if [ -b "${DISK}3" ] || [ -b "${DISK}p3" ]; then
-                  PART="${DISK}3"
-                  [ -b "${DISK}p3" ] && PART="${DISK}p3"
+                  PART="${DISK}3" ; [ -b "${DISK}p3" ] && PART="${DISK}p3"
                   sudo parted -s "$DISK" resizepart 3 100%
                   sudo mkfs.exfat -U ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "$PART"
                   sudo touch "$TESTIGO" && sudo chown consola:users "$TESTIGO"
                   sudo mount -a
               fi
           fi
-
-          contador=0
-          carpetas=("disco_C" "disco_D" "disco_E")
+          contador=0 ; carpetas=("disco_C" "disco_D" "disco_E")
           for dev in $(lsblk -no NAME,FSTYPE,PARTUUID | grep -E "ntfs|vfat" | grep -v "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7" | awk '{print $1}'); do
               actual_dev="/dev/$dev"
               if ! findmnt -n "$actual_dev" > /dev/null && [ $contador -lt 3 ]; then
@@ -84,17 +79,13 @@ jobs:
                   ((contador++))
               fi
           done
-
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
           export LIBSEAT_BACKEND=builtin
-
           GPU=$(lspci | grep -E "VGA|3D")
           if echo "$GPU" | grep -iq "NVIDIA"; then
-              export __NV_PRIME_RENDER_OFFLOAD=1
-              export __GLX_VENDOR_LIBRARY_NAME=nvidia
+              export __NV_PRIME_RENDER_OFFLOAD=1 ; export __GLX_VENDOR_LIBRARY_NAME=nvidia
               echo -e '#!/bin/sh\nMONITOR=$(xrandr | grep " connected" | awk "{print \$1}" | head -n 1)\nRESOLUCION=$(xrandr | grep -A 1 "$MONITOR" | tail -n 1 | awk "{print \$1}")\nxrandr --output "$MONITOR" --mode "$RESOLUCION"\nexec gamemoderun steam -gamepadui' > /home/consola/.xinitrc
-              chmod +x /home/consola/.xinitrc
-              startx /home/consola/.xinitrc -- -keeptty
+              chmod +x /home/consola/.xinitrc ; startx /home/consola/.xinitrc -- -keeptty
           else
               gamescope -e -f -- gamemoderun steam -gamepadui
           fi
@@ -103,11 +94,7 @@ jobs:
           sudo chmod +x rootfs/home/consola/arrancar_steam.sh
           sudo chown 1000:100 rootfs/home/consola/arrancar_steam.sh
 
-          sudo tee rootfs/home/consola/.bash_profile > /dev/null << 'EOF'
-          if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" -eq 1 ]; then
-              exec /home/consola/arrancar_steam.sh
-          fi
-          EOF
+          echo -e 'if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" -eq 1 ]; then\n    exec /home/consola/arrancar_steam.sh\nfi' | sudo tee rootfs/home/consola/.bash_profile > /dev/null
           sudo chown 1000:100 rootfs/home/consola/.bash_profile
 
           sudo mkdir -p rootfs/etc/udev/rules.d/
@@ -148,24 +135,11 @@ jobs:
               size = 128M
           }
           image mi-jeos-consola.img {
-              hdimage {
-                  partition-table-type = "gpt"
-                  align = 1M
-              }
+              hdimage { partition-table-type = "gpt" ; align = 1M }
               size = 6500M
-              partition boot {
-                  image = "boot.vfat"
-                  bootable = true
-                  partition-uuid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
-              }
-              partition sistema {
-                  image = "rootfs.ext4"
-                  partition-uuid = "4fbd7e29-9d25-41b8-afd0-062c0ceff05d"
-              }
-              partition juegos {
-                  image = "juegos.exfat"
-                  partition-uuid = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
-              }
+              partition boot { image = "boot.vfat" ; bootable = true ; partition-uuid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" }
+              partition sistema { image = "rootfs.ext4" ; partition-uuid = "4fbd7e29-9d25-41b8-afd0-062c0ceff05d" }
+              partition juegos { image = "juegos.exfat" ; partition-uuid = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7" }
           }
           EOF
 
