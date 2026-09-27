@@ -8,7 +8,7 @@ RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.co
 RUN pacman -Syu --noconfirm
 
 # 2. Instalamos la fuente tipográfica y los archivos de idioma base para evitar prompts y errores
-# OPTIMIZACIÓN: Añadido 'glibc-locales' para restaurar las definiciones de idioma eliminadas en la imagen base
+# CORRECCIÓN: Añadido 'glibc-locales' para restaurar soporte regional eliminado en imágenes base mínimas
 RUN pacman -S --noconfirm gnu-free-fonts glibc glibc-locales
 
 # 3. Instalamos el resto de los componentes junto al Kernel y soporte universal de Xorg
@@ -25,7 +25,6 @@ RUN pacman -S --noconfirm \
 RUN systemctl enable NetworkManager bluetooth seatd
 
 # === Preconfiguración Regional (Tucumán, Argentina) ===
-# Ahora funcionará correctamente ya que glibc-locales provee los archivos de es_AR
 RUN echo "es_AR.UTF-8 UTF-8" > /etc/locale.gen && locale-gen
 RUN echo "LANG=es_AR.UTF-8" > /etc/locale.conf
 RUN ln -sf /usr/share/zoneinfo/America/Argentina/Tucuman /etc/localtime
@@ -44,19 +43,31 @@ RUN mkdir -p /etc/systemd/system/getty@tty1.service.d/ && \
     echo -e "[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin consola --noclear %I \$TERM" > /etc/systemd/system/getty@tty1.service.d/override.conf
 
 # === Puntos de Montaje para Juegos ===
-RUN mkdir -p /home/consola/juegos /home/consola/juegos_windows && \
-    chown -R consola:users /home/consola/juegos /home/consola/juegos_windows
+RUN mkdir -p /home/consola/juegos /home/consola/discos_windows && \
+    chown -R consola:users /home/consola/juegos /home/consola/discos_windows
 
 # === Forzar carga temprana de drivers gráficos (KMS Universal) ===
 RUN sed -i 's/^MODULES=()/MODULES=(amdgpu i915)/' /etc/mkinitcpio.conf
 
-# === Script de Arranque Dinámico Multi-Hardware ===
+# === Script de Arranque Dinámico Multi-Hardware con Auto-Montaje de Discos ===
 RUN echo '#!/bin/bash' > /home/consola/arrancar_steam.sh && \
     echo 'if [ ! -f /home/consola/.expanded ]; then' >> /home/consola/arrancar_steam.sh && \
     echo '    DISK=$(findmnt -n -o SOURCE / | sed -E "s/p?[0-9]+$//")' >> /home/consola/arrancar_steam.sh && \
     echo '    sudo parted -s "$DISK" resizepart 3 100%' >> /home/consola/arrancar_steam.sh && \
     echo '    touch /home/consola/.expanded' >> /home/consola/arrancar_steam.sh && \
     echo 'fi' >> /home/consola/arrancar_steam.sh && \
+    echo '# === AUTO-MONTAJE EN CALIENTE DE DISCOS WINDOWS ===' >> /home/consola/arrancar_steam.sh && \
+    echo 'contador=0' >> /home/consola/arrancar_steam.sh && \
+    echo 'carpetas=("disco_C" "disco_D" "disco_E")' >> /home/consola/arrancar_steam.sh && \
+    echo 'for dev in $(lsblk -no NAME,FSTYPE | grep -E "ntfs|vfat" | awk "{print \$1}"); do' >> /home/consola/arrancar_steam.sh && \
+    echo '    actual_dev="/dev/$dev"' >> /home/consola/arrancar_steam.sh && \
+    echo '    if ! findmnt -n "$actual_dev" > /dev/null; then' >> /home/consola/arrancar_steam.sh && \
+    echo '        folder="/home/consola/discos_windows/${carpetas[$contador]}"' >> /home/consola/arrancar_steam.sh && \
+    echo '        sudo mount -t ntfs3 -o defaults,noatime,uid=1000,gid=985,umask=000 "$actual_dev" "$folder" 2>/dev/null || sudo mount "$actual_dev" "$folder" 2>/dev/null' >> /home/consola/arrancar_steam.sh && \
+    echo '        ((contador++))' >> /home/consola/arrancar_steam.sh && \
+    echo '    fi' >> /home/consola/arrancar_steam.sh && \
+    echo 'done' >> /home/consola/arrancar_steam.sh && \
+    echo '# ===================================================' >> /home/consola/arrancar_steam.sh && \
     echo 'export XDG_RUNTIME_DIR=/run/user/$(id -u)' >> /home/consola/arrancar_steam.sh && \
     echo 'export LIBSEAT_BACKEND=builtin' >> /home/consola/arrancar_steam.sh && \
     echo 'GPU=$(lspci | grep -E "VGA|3D")' >> /home/consola/arrancar_steam.sh && \
@@ -66,14 +77,14 @@ RUN echo '#!/bin/bash' > /home/consola/arrancar_steam.sh && \
     echo '    startx /usr/bin/steam -gamepadui -- -keeptty' >> /home/consola/arrancar_steam.sh && \
     echo 'else' >> /home/consola/arrancar_steam.sh && \
     echo '    gamescope -e -- steam -gamepadui' >> /home/consola/arrancar_steam.sh && \
-    echo 'fi' >> /home/consola/arrancar_steam.sh && \
+    fi >> /home/consola/arrancar_steam.sh && \
     chmod +x /home/consola/arrancar_steam.sh && \
     chown consola:users /home/consola/arrancar_steam.sh
 
 # Disparador automático en .bash_profile
 RUN echo 'if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" -eq 1 ]; then' > /home/consola/.bash_profile && \
     echo '    exec /home/consola/arrancar_steam.sh' >> /home/consola/.bash_profile && \
-    echo 'fi' >> /home/consola/.bash_profile && \
+    fi >> /home/consola/.bash_profile && \
     chown consola:users /home/consola/.bash_profile
 
 RUN pacman -Scc --noconfirm
