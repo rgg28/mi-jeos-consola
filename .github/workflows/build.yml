@@ -9,17 +9,27 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      # Paso crucial para evitar el error "No space left on device"
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf /usr/shadowbi
+
       - name: Install Build Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools arch-install-scripts
 
+      # Reemplazo de arch-bootstrap.sh por la herramienta nativa pacstrap
       - name: Bootstrap Arch Linux System
         run: |
           mkdir -p rootfs
-          wget https://githubusercontent.com -O arch-bootstrap.sh
-          chmod +x arch-bootstrap.sh
-          sudo ./arch-bootstrap.sh rootfs
+          sudo mkdir -p rootfs/etc/pacman.d
+          echo "Server = https://pkgbuild.com\$repo/os/\$arch" | sudo tee rootfs/etc/pacman.d/mirrorlist
+          sudo pacstrap -K rootfs base
 
       - name: Configure and Install Packages
         run: |
@@ -56,7 +66,6 @@ jobs:
 
       - name: Inject Custom Scripts and Bootloader
         run: |
-          # Copiamos e inyectamos los scripts desde tu repositorio local directamente al sistema de archivos objetivo
           sudo cp arrancar_steam.sh rootfs/home/consola/arrancar_steam.sh
           sudo chmod +x rootfs/home/consola/arrancar_steam.sh
           sudo chown 1000:100 rootfs/home/consola/arrancar_steam.sh
