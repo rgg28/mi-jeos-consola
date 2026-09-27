@@ -34,25 +34,25 @@ jobs:
           sudo mount --bind /proc rootfs/proc
           sudo mount --bind /sys rootfs/sys
           
-          # CORRECCIÓN: Cambiado -p por -P para procesar todos los presets sin fallar
+          # CORRECCIÓN: Cambiado -p por -P para procesar todos los presets de forma automática
           sudo chroot rootfs /bin/bash -c "mkinitcpio -P"
           
           sudo umount -R rootfs/dev rootfs/proc rootfs/sys
           # =========================================================================
 
-          # CORRECCIÓN DE FSTAB: Inyectamos los PARTUUID reales en minúsculas.
+          # CORRECCIÓN DE PUNTOS DE MONTAJE: Carpetas base para el auto-montaje dinámico de Windows
           sudo mkdir -p rootfs/home/consola/juegos
-          sudo mkdir -p rootfs/home/consola/juegos_windows
+          sudo mkdir -p rootfs/home/consola/discos_windows/disco_C
+          sudo mkdir -p rootfs/home/consola/discos_windows/disco_D
+          sudo mkdir -p rootfs/home/consola/discos_windows/disco_E
           
           sudo sed -i '/juegos/d' rootfs/etc/fstab || true
           
-          # Partición interna exFAT del pendrive/disco portable
+          # Partición interna exFAT del propio pendrive permanente
           echo "PARTUUID=ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 /home/consola/juegos exfat defaults,noatime,uid=1000,gid=985,nofail,x-systemd.device-timeout=5s 0 0" | sudo tee -a rootfs/etc/fstab > /dev/null
           
-          # Partición NTFS de Windows (Buscando la etiqueta "Juegos")
-          echo "LABEL=Juegos /home/consola/juegos_windows ntfs3 defaults,noatime,uid=1000,gid=985,umask=000,nofail,x-systemd.device-timeout=3s 0 0" | sudo tee -a rootfs/etc/fstab > /dev/null
-          
-          sudo chown -R 1000:100 rootfs/home/consola/juegos rootfs/home/consola/juegos_windows
+          # Asignamos permisos completos de usuario a las carpetas creadas
+          sudo chown -R 1000:100 rootfs/home/consola/juegos rootfs/home/consola/discos_windows
 
           # 3. Preparamos el cargador de arranque EFI real y el menú de inicio obligatorio
           sudo mkdir -p bootfs/EFI/BOOT
