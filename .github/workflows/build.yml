@@ -21,7 +21,8 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools arch-install-scripts
+          # CORRECCIÓN: Se añade pacman-package-manager para que pacstrap tenga pacman y pacman-key disponibles
+          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools arch-install-scripts pacman-package-manager
 
       # Reemplazo de arch-bootstrap.sh por la herramienta nativa pacstrap
       - name: Bootstrap Arch Linux System
@@ -36,6 +37,10 @@ jobs:
           sudo mount --bind /dev rootfs/dev
           sudo mount --bind /proc rootfs/proc
           sudo mount --bind /sys rootfs/sys
+          
+          # PREVENCIÓN DE ERROR: Copia los DNS del runner para que el chroot tenga acceso a internet
+          sudo cp /etc/resolv.conf rootfs/etc/resolv.conf
+          
           sudo sed -i -e '/^#\[multilib\]/s/^#//' -e '/^\[multilib\]/{n;s/^#//}' rootfs/etc/pacman.conf
           
           sudo chroot rootfs /bin/bash -c "
