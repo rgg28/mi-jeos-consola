@@ -139,5 +139,8 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="0ce6", MODE="0666"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="057e", ATTRS{idProduct}=="2009", MODE="0666"
 EOF
 
+# Forzamos la creación del entorno de arranque e initramfs universal de forma nativa
+RUN mkinitcpio -P
+
 # Limpieza de caché para reducir el tamaño final de la imagen de Docker
 RUN pacman -Scc --noconfirm
