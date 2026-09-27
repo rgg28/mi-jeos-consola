@@ -4,9 +4,14 @@ FROM archlinux:latest
 # Activamos el repositorio multilib
 RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
 
-# Actualizamos e instalamos componentes (Se agregan mkinitcpio y xorg-xinit)
-RUN pacman -Syu --noconfirm && \
-    pacman -S --noconfirm \
+# 1. Actualización limpia del sistema base primero
+RUN pacman -Syu --noconfirm
+
+# 2. Instalamos primero la fuente tipográfica para evitar el prompt interactivo de pacman
+RUN pacman -S --noconfirm gnu-free-fonts
+
+# 3. Instalamos el resto de los componentes junto al Kernel y soporte universal de Xorg
+RUN pacman -S --noconfirm \
     linux linux-firmware mkinitcpio parted \
     mesa lib32-mesa vulkan-radeon \
     nvidia-utils lib32-nvidia-utils libvdpau libva-utils \
@@ -55,7 +60,7 @@ RUN echo '#!/bin/bash' > /home/consola/arrancar_steam.sh && \
     echo 'GPU=$(lspci | grep -E "VGA|3D")' >> /home/consola/arrancar_steam.sh && \
     echo 'if echo "$GPU" | grep -iq "NVIDIA"; then' >> /home/consola/arrancar_steam.sh && \
     echo '    export __NV_PRIME_RENDER_OFFLOAD=1' >> /home/consola/arrancar_steam.sh && \
-    echo '    export __GLX_VENDOR_LIBRARY_NAME=nvidia' >> /home/consola/arrancar_steam.sh && \
+    export __GLX_VENDOR_LIBRARY_NAME=nvidia' >> /home/consola/arrancar_steam.sh && \
     echo '    startx /usr/bin/steam -gamepadui -- -keeptty' >> /home/consola/arrancar_steam.sh && \
     echo 'else' >> /home/consola/arrancar_steam.sh && \
     echo '    gamescope -e -- steam -gamepadui' >> /home/consola/arrancar_steam.sh && \
