@@ -21,20 +21,21 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          # Dejamos solo las herramientas nativas de Ubuntu para armar la imagen final
-          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools
+          # Aseguramos mtools, genimage y zstd para la descompresión y armado de la ISO
+          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools zstd
 
-      # CORRECCIÓN DEFINITIVA: Descarga directa del sistema base precompilado de Arch
-      - name: Bootstrap Arch Linux System (Manual Tarball)
+      # SOLUCIÓN FIJA: Descarga usando el enlace estático que pasaste (Garantiza formato estable)
+      - name: Bootstrap Arch Linux System (Yandex Mirror Tarball)
         run: |
           mkdir -p rootfs
-          # Descargamos el bootstrap oficial que ya viene con todo listo y configurado
-          curl -sL "https://pkgbuild.com" -o bootstrap.tar.zst
           
-          # Descomprimimos manteniendo permisos de Linux
-          sudo tar -xaf bootstrap.tar.zst --strip-components=1 -C rootfs
+          # Descarga directa del tarball de bootstrap estable
+          curl -sL "https://mirror.yandex.ru/archlinux/iso/2026.07.01/archlinux-bootstrap-x86_64.tar.zst" -o bootstrap.tar.zst
           
-          # Configuramos un mirror rápido y global
+          # Descomprimimos manteniendo los privilegios y atributos de Linux
+          sudo tar --zstd -xaf bootstrap.tar.zst --strip-components=1 -C rootfs
+          
+          # Configuramos el mirrorlist global dentro del entorno
           echo "Server = https://pkgbuild.com\$repo/os/\$arch" | sudo tee rootfs/etc/pacman.d/mirrorlist
 
       # Configuración del sistema clonado
@@ -95,7 +96,7 @@ jobs:
           EOF
 
           sudo mkdir -p bootfs/EFI/BOOT bootfs/loader/entries
-          sudo cp rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi bootfs/EFI/BOOT/BOOTX64.EFI
+          sudo cp rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.EFI bootfs/EFI/BOOT/BOOTX64.EFI || sudo cp rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi bootfs/EFI/BOOT/BOOTX64.EFI
           echo -e "default arch.conf\ntimeout 2" | sudo tee bootfs/loader/loader.conf > /dev/null
           echo -e "title Arch_JeOS_Universal\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet rootdelay=5" | sudo tee bootfs/loader/entries/arch.conf > /dev/null
           sudo cp rootfs/boot/vmlinuz-linux bootfs/
