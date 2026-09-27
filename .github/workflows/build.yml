@@ -84,12 +84,14 @@ jobs:
           truncate -s 6G input/rootfs.ext4
           sudo mkfs.ext4 -d rootfs input/rootfs.ext4
           
-          # Partición 3: Datos/Juegos exFAT (1 GB base)
-          truncate -s 1G input/juegos.exfat
+          # Partición 3: Inicialización de bloque base para la partición de Juegos exFAT
+          # Reducimos el tamaño base inicial en el pipeline a 256M para agilizar el build
+          truncate -s 256M input/juegos.exfat
           mkfs.exfat input/juegos.exfat
 
-          # 5. Configuración de genimage con UUIDs en minúsculas estrictas
-          echo 'image boot.vfat {
+          # 5. Configuración de genimage optimizada con tamaños dinámicos
+          cat << 'EOF' > genimage.cfg
+          image boot.vfat {
               vfat {
                   file EFI {
                       image = "boot_dir/EFI"
@@ -112,7 +114,8 @@ jobs:
                   partition-table-type = "gpt"
                   align = 1M
               }
-              size = 7700M
+              # Establecemos un tamaño base inicial controlado para el archivo .img empaquetado
+              size = 6500M
               
               partition boot {
                   image = "boot.vfat"
@@ -127,7 +130,8 @@ jobs:
                   image = "juegos.exfat"
                   partition-uuid = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
               }
-          }' > genimage.cfg
+          }
+          EOF
 
       # Ensamblamos todo con genimage
       - name: Assemble Final IMG File
