@@ -28,8 +28,22 @@ jobs:
           docker rm temp-container
 
           # =========================================================================
+          # CORRECCIÓN ENTORNO DE ARRANQUE (FORZAR GENERACIÓN DE KERNEL/RAMDISK)
+          # =========================================================================
+          # Montamos los directorios del host para poder procesar mkinitcpio
+          sudo mount --bind /dev rootfs/dev
+          sudo mount --bind /proc rootfs/proc
+          sudo mount --bind /sys rootfs/sys
+          
+          # Forzamos a Arch a crear los binarios reales de arranque que Docker omitió
+          sudo chroot rootfs /bin/bash -c "mkinitcpio -p linux"
+          
+          # Desmontamos de forma segura
+          sudo umount -R rootfs/dev rootfs/proc rootfs/sys
+
+          # =========================================================================
           # CORRECCIÓN DE FSTAB: Inyectamos el PARTUUID real que genimage usará abajo.
-          # Usamos las minúsculas exactas y añadimos nofail para evitar bloqueos.
+          # Usamos las MINÚSCULAS exactas obligatorias para evitar Kernel Panic.
           # =========================================================================
           sudo mkdir -p rootfs/home/consola/juegos
           sudo mkdir -p rootfs/home/consola/juegos_windows
@@ -60,12 +74,13 @@ jobs:
 
           # Creamos los archivos de configuración usando tee para evitar bloqueos
           echo -e "default arch.conf\ntimeout 2" | sudo tee bootfs/loader/loader.conf > /dev/null
-          # Nota: Aseguramos el PARTUUID en minúsculas en los parámetros del Kernel
+          
+          # Nota: Aseguramos el PARTUUID en MINÚSCULAS en los parámetros del Kernel
           echo -e "title Arch_JeOS_Consola\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet" | sudo tee bootfs/loader/entries/arch.conf > /dev/null
 
-          # Copiamos el Kernel y la ramdisk usando sudo para evitar el Permission denied
-          sudo cp rootfs/boot/vmlinuz-linux bootfs/ || true
-          sudo cp rootfs/boot/initramfs-linux.img bootfs/ || true
+          # Copiamos el Kernel y la ramdisk (Ahora sí existen gracias al paso de chroot anterior)
+          sudo cp rootfs/boot/vmlinuz-linux bootfs/
+          sudo cp rootfs/boot/initramfs-linux.img bootfs/
 
           # 4. Generamos las carpetas requeridas por genimage
           mkdir -p input
@@ -82,7 +97,7 @@ jobs:
           truncate -s 1G input/juegos.exfat
           mkfs.exfat input/juegos.exfat
 
-          # 5. Configuración de genimage limpia con el bloque vfat correcto
+          # 5. Configuración de genimage limpia con los UUIDs unificados en minúsculas
           echo 'image boot.vfat {
               vfat {
                   file EFI {
@@ -111,15 +126,15 @@ jobs:
               partition boot {
                   image = "boot.vfat"
                   bootable = true
-                  partition-uuid = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
+                  partition-uuid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
               }
               partition sistema {
                   image = "rootfs.ext4"
-                  partition-uuid = "4FBD7E29-9D25-41B8-AFD0-062C0CEFF05D"
+                  partition-uuid = "4fbd7e29-9d25-41b8-afd0-062c0ceff05d"
               }
               partition juegos {
                   image = "juegos.exfat"
-                  partition-uuid = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
+                  partition-uuid = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
               }
           }' > genimage.cfg
 
