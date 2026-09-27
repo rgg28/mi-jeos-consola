@@ -49,7 +49,8 @@ RUN mkdir -p /home/consola/juegos /home/consola/discos_windows && \
 RUN sed -i 's/^MODULES=()/MODULES=(amdgpu i915)/' /etc/mkinitcpio.conf
 
 # === Script de Arranque Dinámico Multi-Hardware con Auto-Montaje de Discos ===
-RUN cat << 'EOF' > /home/consola/arrancar_steam.sh
+# CORRECCIÓN: Se usa la sintaxis Heredoc nativa de Docker para todo el script
+RUN <<EOF cat > /home/consola/arrancar_steam.sh
 #!/bin/bash
 
 # CORRECCIÓN 1: Validamos el archivo testigo usando una ruta absoluta inmune a cambios de usuario de sudo
@@ -57,20 +58,20 @@ TESTIGO="/home/consola/.partition_expanded"
 
 if [ ! -f "$TESTIGO" ]; then
     # Buscamos el disco físico real donde está montada la raíz (ej: /dev/sda o /dev/nvme0n1)
-    DISK=$(findmnt -n -o SOURCE / | sed -E 's/(p[0-9]| [0-9])$//' | sed -E 's/[0-9]+$//')
+    DISK=\$(findmnt -n -o SOURCE / | sed -E 's/(p[0-9]| [0-9])\$//' | sed -E 's/[0-9]+\$//')
     
-    if [ -b "${DISK}3" ] || [ -b "${DISK}p3" ]; then
-        PART="${DISK}3"
-        [ -b "${DISK}p3" ] && PART="${DISK}p3"
+    if [ -b "\${DISK}3" ] || [ -b "\${DISK}p3" ]; then
+        PART="\${DISK}3"
+        [ -b "\${DISK}p3" ] && PART="\${DISK}p3"
         
         # 1. Expandimos de forma segura la partición 3 al máximo disponible
-        sudo parted -s "$DISK" resizepart 3 100%
+        sudo parted -s "\$DISK" resizepart 3 100%
         
         # 2. Re-escribimos el sistema exFAT encima conservando intacto el PARTUUID asignado
-        sudo mkfs.exfat -U ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "$PART"
+        sudo mkfs.exfat -U ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "\$PART"
         
         # Forzamos la creación del testigo con permisos del usuario consola
-        sudo touch "$TESTIGO" && sudo chown consola:users "$TESTIGO"
+        sudo touch "\$TESTIGO" && sudo chown consola:users "\$TESTIGO"
         
         # 3. Forzamos montaje limpio
         sudo mount -a
@@ -82,24 +83,24 @@ fi
 contador=0
 carpetas=("disco_C" "disco_D" "disco_E")
 
-for dev in $(lsblk -no NAME,FSTYPE,PARTUUID | grep -E "ntfs|vfat" | grep -v "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7" | awk '{print $1}'); do
-    actual_dev="/dev/$dev"
+for dev in \$(lsblk -no NAME,FSTYPE,PARTUUID | grep -E "ntfs|vfat" | grep -v "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7" | awk '{print \$1}'); do
+    actual_dev="/dev/\$dev"
     
     # Evitamos procesar la partición de boot EFI propia leyendo los montajes activos
-    if ! findmnt -n "$actual_dev" > /dev/null && [ $contador -lt 3 ]; then
-        folder="/home/consola/discos_windows/${carpetas[$contador]}"
-        sudo mkdir -p "$folder"
-        sudo mount -t ntfs3 -o defaults,noatime,uid=1000,gid=100,umask=000 "$actual_dev" "$folder" 2>/dev/null || sudo mount "$actual_dev" "$folder" 2>/dev/null
-        ((contador++))
+    if ! findmnt -n "\$actual_dev" > /dev/null && [ \$contador -lt 3 ]; then
+        folder="/home/consola/discos_windows/\${carpetas[\$contador]}"
+        sudo mkdir -p "\$folder"
+        sudo mount -t ntfs3 -o defaults,noatime,uid=1000,gid=100,umask=000 "\$actual_dev" "\$folder" 2>/dev/null || sudo mount "\$actual_dev" "\$folder" 2>/dev/null
+        ((\$contador++))
     fi
 done
 # ===================================================
 
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export XDG_RUNTIME_DIR=/run/user/\$(id -u)
 export LIBSEAT_BACKEND=builtin
 
-GPU=$(lspci | grep -E "VGA|3D")
-if echo "$GPU" | grep -iq "NVIDIA"; then
+GPU=\$(lspci | grep -E "VGA|3D")
+if echo "\$GPU" | grep -iq "NVIDIA"; then
     export __NV_PRIME_RENDER_OFFLOAD=1
     export __GLX_VENDOR_LIBRARY_NAME=nvidia
     startx /usr/bin/steam -gamepadui -- -keeptty
@@ -114,8 +115,8 @@ RUN chmod +x /home/consola/arrancar_steam.sh && \
     chown consola:users /home/consola/arrancar_steam.sh
 
 # === Disparador automático en .bash_profile ===
-RUN cat << 'EOF' > /home/consola/.bash_profile
-if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" -eq 1 ]; then
+RUN <<EOF cat > /home/consola/.bash_profile
+if [ -z "\$DISPLAY" ] && [ "\$XDG_VTNR" -eq 1 ]; then
     exec /home/consola/arrancar_steam.sh
 fi
 EOF
@@ -124,7 +125,7 @@ EOF
 RUN chown consola:users /home/consola/.bash_profile
 
 # === Reglas Udev para Soporte Completo de Mandos (Steam Input) ===
-RUN cat << 'EOF' > /etc/udev/rules.d/70-steam-input.rules
+RUN <<EOF cat > /etc/udev/rules.d/70-steam-input.rules
 # Mando de Xbox 360 / Xbox One / Series X|S
 KERNEL=="uinput", MODE="0660", OPTIONS+="static_node=uinput"
 KERNEL=="js*", MODE="0664"
