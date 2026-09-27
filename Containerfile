@@ -50,41 +50,71 @@ RUN mkdir -p /home/consola/juegos /home/consola/discos_windows && \
 RUN sed -i 's/^MODULES=()/MODULES=(amdgpu i915)/' /etc/mkinitcpio.conf
 
 # === Script de Arranque Dinámico Multi-Hardware con Auto-Montaje de Discos ===
-RUN echo '#!/bin/bash' > /home/consola/arrancar_steam.sh && \
-    echo 'if [ ! -f /home/consola/.expanded ]; then' >> /home/consola/arrancar_steam.sh && \
-    echo '    DISK=$(findmnt -n -o SOURCE / | sed -E "s/p?[0-9]+$//")' >> /home/consola/arrancar_steam.sh && \
-    echo '    sudo parted -s "$DISK" resizepart 3 100%' >> /home/consola/arrancar_steam.sh && \
-    echo '    touch /home/consola/.expanded' >> /home/consola/arrancar_steam.sh && \
-    echo 'fi' >> /home/consola/arrancar_steam.sh && \
-    echo '# === AUTO-MONTAJE EN CALIENTE DE DISCOS WINDOWS ===' >> /home/consola/arrancar_steam.sh && \
-    echo 'contador=0' >> /home/consola/arrancar_steam.sh && \
-    echo 'carpetas=("disco_C" "disco_D" "disco_E")' >> /home/consola/arrancar_steam.sh && \
-    echo 'for dev in $(lsblk -no NAME,FSTYPE | grep -E "ntfs|vfat" | awk "{print \$1}"); do' >> /home/consola/arrancar_steam.sh && \
-    echo '    actual_dev="/dev/$dev"' >> /home/consola/arrancar_steam.sh && \
-    echo '    if ! findmnt -n "$actual_dev" > /dev/null; then' >> /home/consola/arrancar_steam.sh && \
-    echo '        folder="/home/consola/discos_windows/${carpetas[$contador]}"' >> /home/consola/arrancar_steam.sh && \
-    echo '        sudo mount -t ntfs3 -o defaults,noatime,uid=1000,gid=985,umask=000 "$actual_dev" "$folder" 2>/dev/null || sudo mount "$actual_dev" "$folder" 2>/dev/null' >> /home/consola/arrancar_steam.sh && \
-    echo '        ((contador++))' >> /home/consola/arrancar_steam.sh && \
-    echo '    fi' >> /home/consola/arrancar_steam.sh && \
-    echo 'done' >> /home/consola/arrancar_steam.sh && \
-    echo '# ===================================================' >> /home/consola/arrancar_steam.sh && \
-    echo 'export XDG_RUNTIME_DIR=/run/user/$(id -u)' >> /home/consola/arrancar_steam.sh && \
-    echo 'export LIBSEAT_BACKEND=builtin' >> /home/consola/arrancar_steam.sh && \
-    echo 'GPU=$(lspci | grep -E "VGA|3D")' >> /home/consola/arrancar_steam.sh && \
-    echo 'if echo "$GPU" | grep -iq "NVIDIA"; then' >> /home/consola/arrancar_steam.sh && \
-    echo '    export __NV_PRIME_RENDER_OFFLOAD=1' >> /home/consola/arrancar_steam.sh && \
-    echo '    export __GLX_VENDOR_LIBRARY_NAME=nvidia' >> /home/consola/arrancar_steam.sh && \
-    echo '    startx /usr/bin/steam -gamepadui -- -keeptty' >> /home/consola/arrancar_steam.sh && \
-    echo 'else' >> /home/consola/arrancar_steam.sh && \
-    echo '    gamescope -e -- steam -gamepadui' >> /home/consola/arrancar_steam.sh && \
-    fi >> /home/consola/arrancar_steam.sh && \
-    chmod +x /home/consola/arrancar_steam.sh && \
+RUN cat << 'EOF' > /home/consola/arrancar_steam.sh
+#!/bin/bash
+if [ ! -f /home/consola/.expanded ]; then
+    DISK=$(findmnt -n -o SOURCE / | sed -E "s/p?[0-9]+$//")
+    sudo parted -s "$DISK" resizepart 3 100%
+    touch /home/consola/.expanded
+fi
+
+# === AUTO-MONTAJE EN CALIENTE DE DISCOS WINDOWS ===
+contador=0
+carpetas=("disco_C" "disco_D" "disco_E")
+for dev in $(lsblk -no NAME,FSTYPE | grep -E "ntfs|vfat" | awk '{print $1}'); do
+    actual_dev="/dev/$dev"
+    if ! findmnt -n "$actual_dev" > /dev/null; then
+        folder="/home/consola/discos_windows/${carpetas[$contador]}"
+        sudo mount -t ntfs3 -o defaults,noatime,uid=1000,gid=985,umask=000 "$actual_dev" "$folder" 2>/dev/null || sudo mount "$actual_dev" "$folder" 2>/dev/null
+        ((contador++))
+    fi
+done
+# ===================================================
+
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export LIBSEAT_BACKEND=builtin
+
+GPU=$(lspci | grep -E "VGA|3D")
+if echo "$GPU" | grep -iq "NVIDIA"; then
+    export __NV_PRIME_RENDER_OFFLOAD=1
+    export __GLX_VENDOR_LIBRARY_NAME=nvidia
+    startx /usr/bin/steam -gamepadui -- -keeptty
+else
+    # OPTIMIZADO PARA MONITORES 1920x1080 FULL HD:
+    # -w 1920 -h 1080: Resolución final de salida en tu monitor.
+    # -W 1920 -H 1080: Resolución con la que renderiza la interfaz de Steam.
+    gamescope -w 1920 -h 1080 -W 1920 -H 1080 -e -- steam -gamepadui
+fi
+EOF
+
+# Aplicamos los permisos correspondientes al script de Steam
+RUN chmod +x /home/consola/arrancar_steam.sh && \
     chown consola:users /home/consola/arrancar_steam.sh
 
-# Disparador automático en .bash_profile
-RUN echo 'if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" -eq 1 ]; then' > /home/consola/.bash_profile && \
-    echo '    exec /home/consola/arrancar_steam.sh' >> /home/consola/.bash_profile && \
-    fi >> /home/consola/.bash_profile && \
-    chown consola:users /home/consola/.bash_profile
+# === Disparador automático en .bash_profile ===
+RUN cat << 'EOF' > /home/consola/.bash_profile
+if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" -eq 1 ]; then
+    exec /home/consola/arrancar_steam.sh
+fi
+EOF
 
+# Aplicamos los permisos correspondientes al perfil de Bash
+RUN chown consola:users /home/consola/.bash_profile
+
+# === Reglas Udev para Soporte Completo de Mandos (Steam Input) ===
+RUN cat << 'EOF' > /etc/udev/rules.d/70-steam-input.rules
+# Mando de Xbox 360 / Xbox One / Series X|S
+KERNEL=="uinput", MODE="0660", OPTIONS+="static_node=uinput"
+KERNEL=="js*", MODE="0664"
+
+# Mandos de PlayStation (DualShock 4 / DualSense 5)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="05c4", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="09cc", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="0ce6", MODE="0666"
+
+# Mandos de Nintendo Switch (Pro Controller / Joy-Cons)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="057e", ATTRS{idProduct}=="2009", MODE="0666"
+EOF
+
+# Limpieza de caché para reducir el tamaño final de la imagen de Docker
 RUN pacman -Scc --noconfirm
