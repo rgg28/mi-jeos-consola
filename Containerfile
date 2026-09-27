@@ -54,8 +54,13 @@ RUN cat << 'EOF' > /home/consola/arrancar_steam.sh
 #!/bin/bash
 if [ ! -f /home/consola/.expanded ]; then
     DISK=$(findmnt -n -o SOURCE / | sed -E "s/p?[0-9]+$//")
+    # 1. Expandimos la partición 3 al 100% del tamaño físico del pendrive
     sudo parted -s "$DISK" resizepart 3 100%
+    # 2. Formateamos en exFAT de forma instantánea manteniendo el PARTUUID requerido por fstab
+    sudo mkfs.exfat -U ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "${DISK}3"
     touch /home/consola/.expanded
+    # 3. Montamos la partición ya expandida para que Steam la use de inmediato
+    sudo mount -a
 fi
 
 # === AUTO-MONTAJE EN CALIENTE DE DISCOS WINDOWS ===
@@ -80,9 +85,7 @@ if echo "$GPU" | grep -iq "NVIDIA"; then
     export __GLX_VENDOR_LIBRARY_NAME=nvidia
     startx /usr/bin/steam -gamepadui -- -keeptty
 else
-    # OPTIMIZADO PARA MONITORES 1920x1080 FULL HD:
-    # -w 1920 -h 1080: Resolución final de salida en tu monitor.
-    # -W 1920 -H 1080: Resolución con la que renderiza la interfaz de Steam.
+    # OPTIMIZADO PARA TU MONITOR 1920x1080 FULL HD
     gamescope -w 1920 -h 1080 -W 1920 -H 1080 -e -- steam -gamepadui
 fi
 EOF
