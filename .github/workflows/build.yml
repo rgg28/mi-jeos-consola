@@ -34,8 +34,8 @@ jobs:
           sudo mount --bind /proc rootfs/proc
           sudo mount --bind /sys rootfs/sys
           
-          # Forzamos a Arch a procesar los hooks de mkinitcpio para generar el ramdisk real
-          sudo chroot rootfs /bin/bash -c "mkinitcpio -p"
+          # CORRECCIÓN: Cambiado -p por -P para procesar todos los presets sin fallar
+          sudo chroot rootfs /bin/bash -c "mkinitcpio -P"
           
           sudo umount -R rootfs/dev rootfs/proc rootfs/sys
           # =========================================================================
