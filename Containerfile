@@ -8,11 +8,9 @@ RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.co
 RUN pacman -Syu --noconfirm
 
 # 2. Instalamos la fuente tipográfica y los archivos de idioma base para evitar prompts y errores
-# CORRECCIÓN: Añadido 'glibc-locales' para restaurar soporte regional eliminado en imágenes base mínimas
 RUN pacman -S --noconfirm gnu-free-fonts glibc glibc-locales
 
 # 3. Instalamos el resto de los componentes junto al Kernel y soporte universal de Xorg
-# CORRECCIÓN: Se añade 'pciutils' (para lspci) y 'lib32-nvidia-utils' se elimina porque requiere drivers propietarios específicos de multilib que chocan en el build.
 RUN pacman -S --noconfirm \
     linux linux-firmware mkinitcpio parted \
     mesa lib32-mesa vulkan-radeon \
@@ -51,28 +49,47 @@ RUN mkdir -p /home/consola/juegos /home/consola/discos_windows && \
 RUN sed -i 's/^MODULES=()/MODULES=(amdgpu i915)/' /etc/mkinitcpio.conf
 
 # === Script de Arranque Dinámico Multi-Hardware con Auto-Montaje de Discos ===
-# CORRECCIÓN DE ERROR: Se cerró correctamente el bloque Heredoc con 'EOF' antes de pasar a la siguiente instrucción RUN.
 RUN cat << 'EOF' > /home/consola/arrancar_steam.sh
 #!/bin/bash
-if [ ! -f /home/consola/.expanded ]; then
-    DISK=$(findmnt -n -o SOURCE / | sed -E "s/p?[0-9]+$//")
-    # 1. Expandimos la partición 3 al 100% del tamaño físico del pendrive
-    sudo parted -s "$DISK" resizepart 3 100%
-    # 2. Formateamos en exFAT de forma instantánea manteniendo el PARTUUID requerido por fstab
-    sudo mkfs.exfat -U ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "${DISK}3"
-    touch /home/consola/.expanded
-    # 3. Montamos la partición ya expandida para que Steam la use de inmediato
-    sudo mount -a
+
+# CORRECCIÓN 1: Validamos el archivo testigo usando una ruta absoluta inmune a cambios de usuario de sudo
+TESTIGO="/home/consola/.partition_expanded"
+
+if [ ! -f "$TESTIGO" ]; then
+    # Buscamos el disco físico real donde está montada la raíz (ej: /dev/sda o /dev/nvme0n1)
+    DISK=$(findmnt -n -o SOURCE / | sed -E 's/(p[0-9]| [0-9])$//' | sed -E 's/[0-9]+$//')
+    
+    if [ -b "${DISK}3" ] || [ -b "${DISK}p3" ]; then
+        PART="${DISK}3"
+        [ -b "${DISK}p3" ] && PART="${DISK}p3"
+        
+        # 1. Expandimos de forma segura la partición 3 al máximo disponible
+        sudo parted -s "$DISK" resizepart 3 100%
+        
+        # 2. Re-escribimos el sistema exFAT encima conservando intacto el PARTUUID asignado
+        sudo mkfs.exfat -U ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "$PART"
+        
+        # Forzamos la creación del testigo con permisos del usuario consola
+        sudo touch "$TESTIGO" && sudo chown consola:users "$TESTIGO"
+        
+        # 3. Forzamos montaje limpio
+        sudo mount -a
+    fi
 fi
 
 # === AUTO-MONTAJE EN CALIENTE DE DISCOS WINDOWS ===
+# CORRECCIÓN 3: Excluimos explícitamente nuestro propio PARTUUID y discos de Linux para no duplicar montajes externos
 contador=0
 carpetas=("disco_C" "disco_D" "disco_E")
-for dev in $(lsblk -no NAME,FSTYPE | grep -E "ntfs|vfat" | awk '{print $1}'); do
+
+for dev in $(lsblk -no NAME,FSTYPE,PARTUUID | grep -E "ntfs|vfat" | grep -v "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7" | awk '{print $1}'); do
     actual_dev="/dev/$dev"
-    if ! findmnt -n "$actual_dev" > /dev/null; then
+    
+    # Evitamos procesar la partición de boot EFI propia leyendo los montajes activos
+    if ! findmnt -n "$actual_dev" > /dev/null && [ $contador -lt 3 ]; then
         folder="/home/consola/discos_windows/${carpetas[$contador]}"
-        sudo mount -t ntfs3 -o defaults,noatime,uid=1000,gid=985,umask=000 "$actual_dev" "$folder" 2>/dev/null || sudo mount "$actual_dev" "$folder" 2>/dev/null
+        sudo mkdir -p "$folder"
+        sudo mount -t ntfs3 -o defaults,noatime,uid=1000,gid=100,umask=000 "$actual_dev" "$folder" 2>/dev/null || sudo mount "$actual_dev" "$folder" 2>/dev/null
         ((contador++))
     fi
 done
