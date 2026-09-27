@@ -21,24 +21,30 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          # CORRECCIÓN: Se añade pacman-package-manager para que pacstrap tenga pacman y pacman-key disponibles
-          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools arch-install-scripts pacman-package-manager
+          # Dejamos solo las herramientas nativas de Ubuntu para armar la imagen final
+          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools
 
-      # Reemplazo de arch-bootstrap.sh por la herramienta nativa pacstrap
-      - name: Bootstrap Arch Linux System
+      # CORRECCIÓN DEFINITIVA: Descarga directa del sistema base precompilado de Arch
+      - name: Bootstrap Arch Linux System (Manual Tarball)
         run: |
           mkdir -p rootfs
-          sudo mkdir -p rootfs/etc/pacman.d
+          # Descargamos el bootstrap oficial que ya viene con todo listo y configurado
+          curl -sL "https://pkgbuild.com" -o bootstrap.tar.zst
+          
+          # Descomprimimos manteniendo permisos de Linux
+          sudo tar -xaf bootstrap.tar.zst --strip-components=1 -C rootfs
+          
+          # Configuramos un mirror rápido y global
           echo "Server = https://pkgbuild.com\$repo/os/\$arch" | sudo tee rootfs/etc/pacman.d/mirrorlist
-          sudo pacstrap -K rootfs base
 
+      # Configuración del sistema clonado
       - name: Configure and Install Packages
         run: |
           sudo mount --bind /dev rootfs/dev
           sudo mount --bind /proc rootfs/proc
           sudo mount --bind /sys rootfs/sys
           
-          # PREVENCIÓN DE ERROR: Copia los DNS del runner para que el chroot tenga acceso a internet
+          # Copiamos la red del host para tener internet dentro del chroot
           sudo cp /etc/resolv.conf rootfs/etc/resolv.conf
           
           sudo sed -i -e '/^#\[multilib\]/s/^#//' -e '/^\[multilib\]/{n;s/^#//}' rootfs/etc/pacman.conf
