@@ -25,7 +25,7 @@ jobs:
       - name: Bootstrap Arch Linux System (Yandex Mirror Tarball)
         run: |
           mkdir -p rootfs
-          wget https://yandex.ru -O bootstrap.tar.zst
+          wget https://mirror.yandex.ru/archlinux/iso/2026.07.01/archlinux-bootstrap-x86_64.tar.zst -O bootstrap.tar.zst
           sudo tar --zstd -xaf bootstrap.tar.zst --strip-components=1 -C rootfs
           echo "Server = https://pkgbuild.com\$repo/os/\$arch" | sudo tee rootfs/etc/pacman.d/mirrorlist
 
