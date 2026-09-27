@@ -28,16 +28,8 @@ jobs:
           docker rm temp-container
 
           # =========================================================================
-          # GENERACIÓN DEL ENTORNO DE ARRANQUE REAL (Solución Kernel ausente)
-          # =========================================================================
-          sudo mount --bind /dev rootfs/dev
-          sudo mount --bind /proc rootfs/proc
-          sudo mount --bind /sys rootfs/sys
-          
-          # Se genera la ramdisk de arranque real dentro del chroot
-          sudo chroot rootfs /bin/bash -c "mkinitcpio -P"
-          
-          sudo umount -R rootfs/dev rootfs/proc rootfs/sys
+          # NOTA DE DISEÑO: La generación de mkinitcpio se movió al Containerfile
+          # para evitar fallos de arquitectura y montajes bind en el runner de GitHub.
           # =========================================================================
 
           # CORRECCIÓN DE PUNTOS DE MONTAJE: Carpetas base para el auto-montaje dinámico de Windows
@@ -70,7 +62,7 @@ jobs:
           # NOTA: Parámetros unificados en minúsculas y rootdelay=5 para compatibilidad USB externa
           echo -e "title Arch_JeOS_Universal\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet rootdelay=5" | sudo tee bootfs/loader/entries/arch.conf > /dev/null
 
-          # Copiamos el Kernel y la ramdisk (Que ahora sí existen gracias al chroot previo)
+          # Copiamos el Kernel y la ramdisk (Que ahora se generaron de forma segura en Docker)
           sudo cp rootfs/boot/vmlinuz-linux bootfs/
           sudo cp rootfs/boot/initramfs-linux.img bootfs/
 
