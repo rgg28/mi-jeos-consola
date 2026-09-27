@@ -49,7 +49,7 @@ jobs:
           sudo sed -i '/juegos/d' rootfs/etc/fstab || true
           
           # Partición interna exFAT del propio pendrive permanente
-          echo "PARTUUID=ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 /home/consola/juegos exfat defaults,noatime,uid=1000,gid=985,nofail,x-systemd.device-timeout=5s 0 0" | sudo tee -a rootfs/etc/fstab > /dev/null
+          echo "PARTUUID=ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 /home/consola/juegos exfat defaults,noatime,uid=1000,gid=985,nofail 0 0" | sudo tee -a rootfs/etc/fstab > /dev/null
           
           # Asignamos permisos completos de usuario a las carpetas creadas (UID 1000, GID 100 de users)
           sudo chown -R 1000:100 rootfs/home/consola/juegos rootfs/home/consola/discos_windows
@@ -80,9 +80,7 @@ jobs:
           
           sudo cp -r bootfs input/boot_dir
           
-          # CORRECCIÓN DE SEGURIDAD EXCLUSIVA: 'mkfs.ext4 -d' requiere preservar los UID/GID reales
-          # de Arch Linux (como root=0 o consola=1000). Sin la opción -E android_sparse, 
-          # mkfs.ext4 en Ubuntu descarta IDs extendidos. Usamos la sintaxis estándar y segura.
+          # CORRECCIÓN DE SEGURIDAD EXCLUSIVA: Evitamos incompatibilidades de mkfs en hosts Ubuntu
           truncate -s 6G input/rootfs.ext4
           sudo mkfs.ext4 -F -O ^metadata_csum -d rootfs input/rootfs.ext4
           
@@ -90,55 +88,56 @@ jobs:
           truncate -s 256M input/juegos.exfat
           mkfs.exfat input/juegos.exfat
 
-          # 5. Configuración de genimage optimizada con tamaños dinámicos
-          # CORRECCIÓN DE SINTAXIS: Se eliminó la indentación de los comandos YAML internos para evitar
-          # que los espacios se inyecten dentro del archivo de configuración final de genimage.cfg.
-          cat << 'EOF' > genimage.cfg
-image boot.vfat {
-    vfat {
-        file EFI {
-            image = "boot_dir/EFI"
-        }
-        file loader {
-            image = "boot_dir/loader"
-        }
-        file vmlinuz-linux {
-            image = "boot_dir/vmlinuz-linux"
-        }
-        file initramfs-linux.img {
-            image = "boot_dir/initramfs-linux.img"
-        }
-    }
-    size = 128M
-}
+          # 5. Configuración de genimage utilizando delimitadores limpios respetando el tabulado de YAML
+          sudo bash -c "cat << 'EOF' > genimage.cfg
+          image boot.vfat {
+              vfat {
+                  file EFI {
+                      image = \"boot_dir/EFI\"
+                  }
+                  file loader {
+                      image = \"boot_dir/loader\"
+                  }
+                  file vmlinuz-linux {
+                      image = \"boot_dir/vmlinuz-linux\"
+                  }
+                  file initramfs-linux.img {
+                      image = \"boot_dir/initramfs-linux.img\"
+                  }
+              }
+              size = 128M
+          }
 
-image mi-jeos-consola.img {
-    hdimage {
-        partition-table-type = "gpt"
-        align = 1M
-    }
-    size = 6500M
-    
-    partition boot {
-        image = "boot.vfat"
-        bootable = true
-        partition-uuid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
-    }
-    partition sistema {
-        image = "rootfs.ext4"
-        partition-uuid = "4fbd7e29-9d25-41b8-afd0-062c0ceff05d"
-    }
-    partition juegos {
-        image = "juegos.exfat"
-        partition-uuid = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
-    }
-}
-EOF
+          image mi-jeos-consola.img {
+              hdimage {
+                  partition-table-type = \"gpt\"
+                  align = 1M
+              }
+              size = 6500M
+              
+              partition boot {
+                  image = \"boot.vfat\"
+                  bootable = true
+                  partition-uuid = \"c12a7328-f81f-11d2-ba4b-00a0c93ec93b\"
+              }
+              partition sistema {
+                  image = \"rootfs.ext4\"
+                  partition-uuid = \"4fbd7e29-9d25-41b8-afd0-062c0ceff05d\"
+              }
+              partition juegos {
+                  image = \"juegos.exfat\"
+                  partition-uuid = \"ebd0a0a2-b9e5-4433-87c0-68b6b72699c7\"
+              }
+          }
+          EOF"
+
+          # Limpiamos los espacios en blanco iniciales que metió la indentación de YAML en el archivo final
+          sudo sed -i 's/^[[:space:]]\{10\}//' genimage.cfg
 
       # Ensamblamos todo con genimage
-      # CORRECCIÓN DE ENTORNO: genimage busca las carpetas nativas ./input y ./root en el directorio actual.
       - name: Assemble Final IMG File
         run: |
+          mkdir -p images
           sudo genimage --config genimage.cfg --inputpath input --outputpath images
           sudo mv images/mi-jeos-consola.img ./
           sudo chmod 777 mi-jeos-consola.img
