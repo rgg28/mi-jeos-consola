@@ -8,7 +8,8 @@ RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.co
 RUN pacman -Syu --noconfirm
 
 # 2. Instalamos la fuente tipográfica y los archivos de idioma base para evitar prompts y errores
-RUN pacman -S --noconfirm gnu-free-fonts glibc
+# OPTIMIZACIÓN: Añadido 'glibc-locales' para restaurar las definiciones de idioma eliminadas en la imagen base
+RUN pacman -S --noconfirm gnu-free-fonts glibc glibc-locales
 
 # 3. Instalamos el resto de los componentes junto al Kernel y soporte universal de Xorg
 RUN pacman -S --noconfirm \
@@ -24,6 +25,7 @@ RUN pacman -S --noconfirm \
 RUN systemctl enable NetworkManager bluetooth seatd
 
 # === Preconfiguración Regional (Tucumán, Argentina) ===
+# Ahora funcionará correctamente ya que glibc-locales provee los archivos de es_AR
 RUN echo "es_AR.UTF-8 UTF-8" > /etc/locale.gen && locale-gen
 RUN echo "LANG=es_AR.UTF-8" > /etc/locale.conf
 RUN ln -sf /usr/share/zoneinfo/America/Argentina/Tucuman /etc/localtime
