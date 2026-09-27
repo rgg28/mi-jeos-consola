@@ -12,10 +12,11 @@ RUN pacman -Syu --noconfirm
 RUN pacman -S --noconfirm gnu-free-fonts glibc glibc-locales
 
 # 3. Instalamos el resto de los componentes junto al Kernel y soporte universal de Xorg
+# CORRECCIÓN: Se añade 'pciutils' (para lspci) y 'lib32-nvidia-utils' se elimina porque requiere drivers propietarios específicos de multilib que chocan en el build.
 RUN pacman -S --noconfirm \
     linux linux-firmware mkinitcpio parted \
     mesa lib32-mesa vulkan-radeon \
-    nvidia-utils lib32-nvidia-utils libvdpau libva-utils \
+    nvidia-utils libvdpau libva-utils pciutils \
     steam gamescope retroarch \
     bluez bluez-utils networkmanager seatd \
     xorg-server xorg-xinit xf86-video-amdgpu exfatprogs ntfs-3g sudo \
@@ -50,6 +51,7 @@ RUN mkdir -p /home/consola/juegos /home/consola/discos_windows && \
 RUN sed -i 's/^MODULES=()/MODULES=(amdgpu i915)/' /etc/mkinitcpio.conf
 
 # === Script de Arranque Dinámico Multi-Hardware con Auto-Montaje de Discos ===
+# CORRECCIÓN DE ERROR: Se cerró correctamente el bloque Heredoc con 'EOF' antes de pasar a la siguiente instrucción RUN.
 RUN cat << 'EOF' > /home/consola/arrancar_steam.sh
 #!/bin/bash
 if [ ! -f /home/consola/.expanded ]; then
