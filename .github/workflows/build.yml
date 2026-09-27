@@ -1,6 +1,6 @@
 name: Build My JeOS Image (Direct Rootfs)
 on:
-  workflow_dispatch: # Botón manual de encendido
+  workflow_dispatch:
 
 jobs:
   build:
@@ -9,45 +9,33 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # 1. Instalamos herramientas necesarias en el host Ubuntu
       - name: Install Build Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools arch-install-scripts
 
-      # 2. Creamos el sistema Arch Linux directamente sin usar Docker
       - name: Bootstrap Arch Linux System
         run: |
           mkdir -p rootfs
-          
-          # Descargamos el script de bootstrap oficial de Arch para entornos ajenos
           wget https://githubusercontent.com
           chmod +x arch-bootstrap.sh
-          
-          # Instalamos un Arch Linux base directo en la carpeta rootfs
           sudo ./arch-bootstrap.sh rootfs
 
-      # 3. Configuramos e instalamos tus paquetes de juego mediante chroot nativo
       - name: Configure and Install Packages
         run: |
-          # Montajes obligatorios para que pacman y el Kernel funcionen en el chroot
           sudo mount --bind /dev rootfs/dev
           sudo mount --bind /proc rootfs/proc
           sudo mount --bind /sys rootfs/sys
-
-          # Habilitamos Multilib dentro del nuevo sistema
           sudo sed -i -e '/^#\[multilib\]/s/^#//' -e '/^\[multilib\]/{n;s/^#//}' rootfs/etc/pacman.conf
           
-          # Actualizamos e instalamos todos tus paquetes de una sola vez
           sudo chroot rootfs /bin/bash -c "
             pacman-key --init && pacman-key --populate archlinux
             pacman -Syu --noconfirm
             pacman -S --noconfirm gnu-free-fonts glibc glibc-locales
-            pacman -S --noconfirm linux linux-firmware mkinitcpio parted mesa lib32-mesa vulkan-radeon nvidia-utils libvdpau libva-utils pciutils steam gamescope retroarch bluez bluez-utils networkmanager seatd xorg-server xorg-xinit xf86-video-amdgpu exfatprogs ntfs-3g sudo pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber
-            systemctl enable NetworkManager bluetooth seatd
+            pacman -S --noconfirm linux linux-firmware mkinitcpio parted mesa lib32-mesa vulkan-radeon vulkan-swrast nvidia-utils libvdpau libva-utils pciutils steam gamescope retroarch bluez bluez-utils networkmanager seatd xorg-server xorg-xinit xorg-xrandr xf86-video-amdgpu exfatprogs ntfs-3g fuse2 sudo pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber mangohud lib32-mangohud gamemode lib32-gamemode dbus polkit
+            systemctl enable NetworkManager bluetooth seatd dbus
           "
 
-          # Configuración Regional (Tucumán, Argentina) y Cuentas
           sudo chroot rootfs /bin/bash -c "
             echo 'es_AR.UTF-8 UTF-8' > /etc/locale.gen
             locale-gen
@@ -60,27 +48,16 @@ jobs:
             setcap 'cap_sys_nice+ep' /usr/bin/gamescope
           "
 
-          # Configuración de Autologin TTY1
           sudo mkdir -p rootfs/etc/systemd/system/getty@tty1.service.d/
           echo -e "[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin consola --noclear %I \$TERM" | sudo tee rootfs/etc/systemd/system/getty@tty1.service.d/override.conf > /dev/null
 
-          # Puntos de Montaje para Juegos
           sudo mkdir -p rootfs/home/consola/juegos rootfs/home/consola/discos_windows
           sudo chown -R 1000:100 rootfs/home/consola/juegos rootfs/home/consola/discos_windows
-
-          # Forzar carga temprana de drivers gráficos (KMS)
           sudo sed -i 's/^MODULES=()/MODULES=(amdgpu i915)/' rootfs/etc/mkinitcpio.conf
-
-          # Generación del Initramfs/Kernel de Arranque Real
           sudo chroot rootfs /bin/bash -c "mkinitcpio -P"
-
-          # Desmontamos de forma segura el entorno de simulación
           sudo umount -R rootfs/dev rootfs/proc rootfs/sys
-
-      # 4. Inyección de Scripts, Reglas Udev y Configuración de Arranque EFI
       - name: Inject Custom Scripts and Bootloader
         run: |
-          # Creamos el script arrancar_steam.sh directamente en su ruta (sin problemas de escapes de Docker)
           sudo tee rootfs/home/consola/arrancar_steam.sh > /dev/null << 'EOF'
           #!/bin/bash
           TESTIGO="/home/consola/.partition_expanded"
@@ -110,20 +87,22 @@ jobs:
 
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
           export LIBSEAT_BACKEND=builtin
+
           GPU=$(lspci | grep -E "VGA|3D")
           if echo "$GPU" | grep -iq "NVIDIA"; then
               export __NV_PRIME_RENDER_OFFLOAD=1
               export __GLX_VENDOR_LIBRARY_NAME=nvidia
-              startx /usr/bin/steam -gamepadui -- -keeptty
+              echo -e '#!/bin/sh\nMONITOR=$(xrandr | grep " connected" | awk "{print \$1}" | head -n 1)\nRESOLUCION=$(xrandr | grep -A 1 "$MONITOR" | tail -n 1 | awk "{print \$1}")\nxrandr --output "$MONITOR" --mode "$RESOLUCION"\nexec gamemoderun steam -gamepadui' > /home/consola/.xinitrc
+              chmod +x /home/consola/.xinitrc
+              startx /home/consola/.xinitrc -- -keeptty
           else
-              gamescope -w 1920 -h 1080 -W 1920 -H 1080 -e -- steam -gamepadui
+              gamescope -e -f -- gamemoderun steam -gamepadui
           fi
           EOF
 
           sudo chmod +x rootfs/home/consola/arrancar_steam.sh
           sudo chown 1000:100 rootfs/home/consola/arrancar_steam.sh
 
-          # Inyectamos .bash_profile
           sudo tee rootfs/home/consola/.bash_profile > /dev/null << 'EOF'
           if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" -eq 1 ]; then
               exec /home/consola/arrancar_steam.sh
@@ -131,7 +110,6 @@ jobs:
           EOF
           sudo chown 1000:100 rootfs/home/consola/.bash_profile
 
-          # Reglas Udev para Controles
           sudo mkdir -p rootfs/etc/udev/rules.d/
           sudo tee rootfs/etc/udev/rules.d/70-steam-input.rules > /dev/null << 'EOF'
           KERNEL=="uinput", MODE="0660", OPTIONS+="static_node=uinput"
@@ -142,31 +120,23 @@ jobs:
           SUBSYSTEM=="usb", ATTRS{idVendor}=="057e", ATTRS{idProduct}=="2009", MODE="0666"
           EOF
 
-          # Estructuramos la partición EFI de arranque (bootfs)
           sudo mkdir -p bootfs/EFI/BOOT bootfs/loader/entries
           sudo cp rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi bootfs/EFI/BOOT/BOOTX64.EFI
           echo -e "default arch.conf\ntimeout 2" | sudo tee bootfs/loader/loader.conf > /dev/null
           echo -e "title Arch_JeOS_Universal\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet rootdelay=5" | sudo tee bootfs/loader/entries/arch.conf > /dev/null
           sudo cp rootfs/boot/vmlinuz-linux bootfs/
           sudo cp rootfs/boot/initramfs-linux.img bootfs/
-
-          # Limpieza interna para aliviar peso
           sudo chroot rootfs /bin/bash -c "pacman -Scc --noconfirm"
 
-      # 5. Formateo y Ensamblaje con Genimage
       - name: Assemble Final IMG File
         run: |
           mkdir -p input images
           sudo cp -r bootfs input/boot_dir
-
-          # Creación del sistema de archivos ext4 nativo desde Ubuntu (libre de incompatibilidades)
           truncate -s 6G input/rootfs.ext4
           sudo mkfs.ext4 -F -O ^metadata_csum -d rootfs input/rootfs.ext4
-          
           truncate -s 256M input/juegos.exfat
           mkfs.exfat input/juegos.exfat
 
-          # Archivo de configuración genimage
           cat << 'EOF' > genimage.cfg
           image boot.vfat {
               vfat {
@@ -203,7 +173,6 @@ jobs:
           sudo mv images/mi-jeos-consola.img ./
           sudo chmod 777 mi-jeos-consola.img
 
-      # 6. Guardamos el resultado final
       - name: Upload Bootable IMG
         uses: actions/upload-artifact@v4
         with:
