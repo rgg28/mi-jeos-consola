@@ -46,7 +46,7 @@ RUN mkdir -p /home/consola/juegos /home/consola/juegos_windows && \
     chown -R consola:users /home/consola/juegos /home/consola/juegos_windows
 
 # === Forzar carga temprana de drivers gráficos (KMS Universal) ===
-RUN sed -i 's/^MODULES=()/MODULES=(amdgpu i915 nvidia nvidia_modeset nvidia_uvm nvidia_drm)/' /etc/mkinitcpio.conf
+RUN sed -i 's/^MODULES=()/MODULES=(amdgpu i915)/' /etc/mkinitcpio.conf
 
 # === Script de Arranque Dinámico Multi-Hardware ===
 RUN echo '#!/bin/bash' > /home/consola/arrancar_steam.sh && \
