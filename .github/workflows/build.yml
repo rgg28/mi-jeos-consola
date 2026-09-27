@@ -1,4 +1,4 @@
-name: Build My JeOS Image
+name: Build My JeOS Image (Direct Rootfs)
 on:
   workflow_dispatch: # Botón manual de encendido
 
@@ -9,134 +9,203 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Instalamos las herramientas de particionado y soporte de sistemas de archivos
-      - name: Install Disk Tools
+      # 1. Instalamos herramientas necesarias en el host Ubuntu
+      - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools
+          sudo apt-get install -y genimage dosfstools e2fsprogs exfatprogs mtools arch-install-scripts
 
-      # Extraemos el sistema y preparamos las carpetas estructuradas para genimage
-      - name: Create Multi-Partition Structure
+      # 2. Creamos el sistema Arch Linux directamente sin usar Docker
+      - name: Bootstrap Arch Linux System
         run: |
-          # 1. Compilamos tu Containerfile puro
-          docker build -t mi-jeos-consola:latest -f ./Containerfile .
-          
-          # 2. Extraemos el sistema operativo a una carpeta temporal con permisos root
           mkdir -p rootfs
-          docker create --name temp-container mi-jeos-consola:latest
-          sudo docker export temp-container | sudo tar -C rootfs -xf -
-          docker rm temp-container
+          
+          # Descargamos el script de bootstrap oficial de Arch para entornos ajenos
+          wget https://githubusercontent.com
+          chmod +x arch-bootstrap.sh
+          
+          # Instalamos un Arch Linux base directo en la carpeta rootfs
+          sudo ./arch-bootstrap.sh rootfs
 
-          # =========================================================================
-          # NOTA DE DISEÑO: La generación de mkinitcpio se movió al Containerfile
-          # para evitar fallos de arquitectura y montajes bind en el runner de GitHub.
-          # =========================================================================
+      # 3. Configuramos e instalamos tus paquetes de juego mediante chroot nativo
+      - name: Configure and Install Packages
+        run: |
+          # Montajes obligatorios para que pacman y el Kernel funcionen en el chroot
+          sudo mount --bind /dev rootfs/dev
+          sudo mount --bind /proc rootfs/proc
+          sudo mount --bind /sys rootfs/sys
 
-          # CORRECCIÓN DE PUNTOS DE MONTAJE: Carpetas base para el auto-montaje dinámico de Windows
-          sudo mkdir -p rootfs/home/consola/juegos
-          sudo mkdir -p rootfs/home/consola/discos_windows/disco_C
-          sudo mkdir -p rootfs/home/consola/discos_windows/disco_D
-          sudo mkdir -p rootfs/home/consola/discos_windows/disco_E
+          # Habilitamos Multilib dentro del nuevo sistema
+          sudo sed -i -e '/^#\[multilib\]/s/^#//' -e '/^\[multilib\]/{n;s/^#//}' rootfs/etc/pacman.conf
           
-          sudo sed -i '/juegos/d' rootfs/etc/fstab || true
-          
-          # Partición interna exFAT del propio pendrive permanente
-          echo "PARTUUID=ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 /home/consola/juegos exfat defaults,noatime,uid=1000,gid=985,nofail 0 0" | sudo tee -a rootfs/etc/fstab > /dev/null
-          
-          # Asignamos permisos completos de usuario a las carpetas creadas (UID 1000, GID 100 de users)
+          # Actualizamos e instalamos todos tus paquetes de una sola vez
+          sudo chroot rootfs /bin/bash -c "
+            pacman-key --init && pacman-key --populate archlinux
+            pacman -Syu --noconfirm
+            pacman -S --noconfirm gnu-free-fonts glibc glibc-locales
+            pacman -S --noconfirm linux linux-firmware mkinitcpio parted mesa lib32-mesa vulkan-radeon nvidia-utils libvdpau libva-utils pciutils steam gamescope retroarch bluez bluez-utils networkmanager seatd xorg-server xorg-xinit xf86-video-amdgpu exfatprogs ntfs-3g sudo pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber
+            systemctl enable NetworkManager bluetooth seatd
+          "
+
+          # Configuración Regional (Tucumán, Argentina) y Cuentas
+          sudo chroot rootfs /bin/bash -c "
+            echo 'es_AR.UTF-8 UTF-8' > /etc/locale.gen
+            locale-gen
+            echo 'LANG=es_AR.UTF-8' > /etc/locale.conf
+            ln -sf /usr/share/zoneinfo/America/Argentina/Tucuman /etc/localtime
+            echo 'root:root' | chpasswd
+            useradd -m -g users -G wheel,video,input,seat -s /bin/bash consola
+            passwd -d consola
+            echo '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' >> /etc/sudoers
+            setcap 'cap_sys_nice+ep' /usr/bin/gamescope
+          "
+
+          # Configuración de Autologin TTY1
+          sudo mkdir -p rootfs/etc/systemd/system/getty@tty1.service.d/
+          echo -e "[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin consola --noclear %I \$TERM" | sudo tee rootfs/etc/systemd/system/getty@tty1.service.d/override.conf > /dev/null
+
+          # Puntos de Montaje para Juegos
+          sudo mkdir -p rootfs/home/consola/juegos rootfs/home/consola/discos_windows
           sudo chown -R 1000:100 rootfs/home/consola/juegos rootfs/home/consola/discos_windows
 
-          # 3. Preparamos el cargador de arranque EFI real y el menú de inicio obligatorio
-          sudo mkdir -p bootfs/EFI/BOOT
-          sudo mkdir -p bootfs/loader/entries
-          
-          # Copiamos el binario de arranque integrado en Arch
-          if [ -f rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi ]; then
-            sudo cp rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi bootfs/EFI/BOOT/BOOTX64.EFI
-          else
-            echo "Bootloader" | sudo tee bootfs/EFI/BOOT/BOOTX64.EFI > /dev/null
+          # Forzar carga temprana de drivers gráficos (KMS)
+          sudo sed -i 's/^MODULES=()/MODULES=(amdgpu i915)/' rootfs/etc/mkinitcpio.conf
+
+          # Generación del Initramfs/Kernel de Arranque Real
+          sudo chroot rootfs /bin/bash -c "mkinitcpio -P"
+
+          # Desmontamos de forma segura el entorno de simulación
+          sudo umount -R rootfs/dev rootfs/proc rootfs/sys
+
+      # 4. Inyección de Scripts, Reglas Udev y Configuración de Arranque EFI
+      - name: Inject Custom Scripts and Bootloader
+        run: |
+          # Creamos el script arrancar_steam.sh directamente en su ruta (sin problemas de escapes de Docker)
+          sudo tee rootfs/home/consola/arrancar_steam.sh > /dev/null << 'EOF'
+          #!/bin/bash
+          TESTIGO="/home/consola/.partition_expanded"
+          if [ ! -f "$TESTIGO" ]; then
+              DISK=$(findmnt -n -o SOURCE / | sed -E 's/(p[0-9]| [0-9])$//' | sed -E 's/[0-9]+$//')
+              if [ -b "${DISK}3" ] || [ -b "${DISK}p3" ]; then
+                  PART="${DISK}3"
+                  [ -b "${DISK}p3" ] && PART="${DISK}p3"
+                  sudo parted -s "$DISK" resizepart 3 100%
+                  sudo mkfs.exfat -U ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "$PART"
+                  sudo touch "$TESTIGO" && sudo chown consola:users "$TESTIGO"
+                  sudo mount -a
+              fi
           fi
 
-          echo -e "default arch.conf\ntimeout 2" | sudo tee bootfs/loader/loader.conf > /dev/null
-          
-          # NOTA: Parámetros unificados en minúsculas y rootdelay=5 para compatibilidad USB externa
-          echo -e "title Arch_JeOS_Universal\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet rootdelay=5" | sudo tee bootfs/loader/entries/arch.conf > /dev/null
+          contador=0
+          carpetas=("disco_C" "disco_D" "disco_E")
+          for dev in $(lsblk -no NAME,FSTYPE,PARTUUID | grep -E "ntfs|vfat" | grep -v "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7" | awk '{print $1}'); do
+              actual_dev="/dev/$dev"
+              if ! findmnt -n "$actual_dev" > /dev/null && [ $contador -lt 3 ]; then
+                  folder="/home/consola/discos_windows/${carpetas[$contador]}"
+                  sudo mkdir -p "$folder"
+                  sudo mount -t ntfs3 -o defaults,noatime,uid=1000,gid=100,umask=000 "$actual_dev" "$folder" 2>/dev/null || sudo mount "$actual_dev" "$folder" 2>/dev/null
+                  ((contador++))
+              fi
+          done
 
-          # Copiamos el Kernel y la ramdisk (Que ahora se generaron de forma segura en Docker)
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export LIBSEAT_BACKEND=builtin
+          GPU=$(lspci | grep -E "VGA|3D")
+          if echo "$GPU" | grep -iq "NVIDIA"; then
+              export __NV_PRIME_RENDER_OFFLOAD=1
+              export __GLX_VENDOR_LIBRARY_NAME=nvidia
+              startx /usr/bin/steam -gamepadui -- -keeptty
+          else
+              gamescope -w 1920 -h 1080 -W 1920 -H 1080 -e -- steam -gamepadui
+          fi
+          EOF
+
+          sudo chmod +x rootfs/home/consola/arrancar_steam.sh
+          sudo chown 1000:100 rootfs/home/consola/arrancar_steam.sh
+
+          # Inyectamos .bash_profile
+          sudo tee rootfs/home/consola/.bash_profile > /dev/null << 'EOF'
+          if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" -eq 1 ]; then
+              exec /home/consola/arrancar_steam.sh
+          fi
+          EOF
+          sudo chown 1000:100 rootfs/home/consola/.bash_profile
+
+          # Reglas Udev para Controles
+          sudo mkdir -p rootfs/etc/udev/rules.d/
+          sudo tee rootfs/etc/udev/rules.d/70-steam-input.rules > /dev/null << 'EOF'
+          KERNEL=="uinput", MODE="0660", OPTIONS+="static_node=uinput"
+          KERNEL=="js*", MODE="0664"
+          SUBSYSTEM=="usb", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="05c4", MODE="0666"
+          SUBSYSTEM=="usb", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="09cc", MODE="0666"
+          SUBSYSTEM=="usb", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="0ce6", MODE="0666"
+          SUBSYSTEM=="usb", ATTRS{idVendor}=="057e", ATTRS{idProduct}=="2009", MODE="0666"
+          EOF
+
+          # Estructuramos la partición EFI de arranque (bootfs)
+          sudo mkdir -p bootfs/EFI/BOOT bootfs/loader/entries
+          sudo cp rootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi bootfs/EFI/BOOT/BOOTX64.EFI
+          echo -e "default arch.conf\ntimeout 2" | sudo tee bootfs/loader/loader.conf > /dev/null
+          echo -e "title Arch_JeOS_Universal\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=PARTUUID=4fbd7e29-9d25-41b8-afd0-062c0ceff05d rw quiet rootdelay=5" | sudo tee bootfs/loader/entries/arch.conf > /dev/null
           sudo cp rootfs/boot/vmlinuz-linux bootfs/
           sudo cp rootfs/boot/initramfs-linux.img bootfs/
 
-          # 4. Generamos las carpetas requeridas por genimage
-          mkdir -p input
-          mkdir -p root
-          
+          # Limpieza interna para aliviar peso
+          sudo chroot rootfs /bin/bash -c "pacman -Scc --noconfirm"
+
+      # 5. Formateo y Ensamblaje con Genimage
+      - name: Assemble Final IMG File
+        run: |
+          mkdir -p input images
           sudo cp -r bootfs input/boot_dir
-          
-          # CORRECCIÓN DE SEGURIDAD EXCLUSIVA: Evitamos incompatibilidades de mkfs en hosts Ubuntu
+
+          # Creación del sistema de archivos ext4 nativo desde Ubuntu (libre de incompatibilidades)
           truncate -s 6G input/rootfs.ext4
           sudo mkfs.ext4 -F -O ^metadata_csum -d rootfs input/rootfs.ext4
           
-          # Partición 3: Inicialización de bloque base para la partición de Juegos exFAT
           truncate -s 256M input/juegos.exfat
           mkfs.exfat input/juegos.exfat
 
-          # 5. Configuración de genimage utilizando delimitadores limpios respetando el tabulado de YAML
-          sudo bash -c "cat << 'EOF' > genimage.cfg
+          # Archivo de configuración genimage
+          cat << 'EOF' > genimage.cfg
           image boot.vfat {
               vfat {
-                  file EFI {
-                      image = \"boot_dir/EFI\"
-                  }
-                  file loader {
-                      image = \"boot_dir/loader\"
-                  }
-                  file vmlinuz-linux {
-                      image = \"boot_dir/vmlinuz-linux\"
-                  }
-                  file initramfs-linux.img {
-                      image = \"boot_dir/initramfs-linux.img\"
-                  }
+                  file EFI { image = "boot_dir/EFI" }
+                  file loader { image = "boot_dir/loader" }
+                  file vmlinuz-linux { image = "boot_dir/vmlinuz-linux" }
+                  file initramfs-linux.img { image = "boot_dir/initramfs-linux.img" }
               }
               size = 128M
           }
-
           image mi-jeos-consola.img {
               hdimage {
-                  partition-table-type = \"gpt\"
+                  partition-table-type = "gpt"
                   align = 1M
               }
               size = 6500M
-              
               partition boot {
-                  image = \"boot.vfat\"
+                  image = "boot.vfat"
                   bootable = true
-                  partition-uuid = \"c12a7328-f81f-11d2-ba4b-00a0c93ec93b\"
+                  partition-uuid = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
               }
               partition sistema {
-                  image = \"rootfs.ext4\"
-                  partition-uuid = \"4fbd7e29-9d25-41b8-afd0-062c0ceff05d\"
+                  image = "rootfs.ext4"
+                  partition-uuid = "4fbd7e29-9d25-41b8-afd0-062c0ceff05d"
               }
               partition juegos {
-                  image = \"juegos.exfat\"
-                  partition-uuid = \"ebd0a0a2-b9e5-4433-87c0-68b6b72699c7\"
+                  image = "juegos.exfat"
+                  partition-uuid = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
               }
           }
-          EOF"
+          EOF
 
-          # Limpiamos los espacios en blanco iniciales que metió la indentación de YAML en el archivo final
-          sudo sed -i 's/^[[:space:]]\{10\}//' genimage.cfg
-
-      # Ensamblamos todo con genimage
-      - name: Assemble Final IMG File
-        run: |
-          mkdir -p images
           sudo genimage --config genimage.cfg --inputpath input --outputpath images
           sudo mv images/mi-jeos-consola.img ./
           sudo chmod 777 mi-jeos-consola.img
 
-      # Subimos la imagen definitiva armada
+      # 6. Guardamos el resultado final
       - name: Upload Bootable IMG
         uses: actions/upload-artifact@v4
         with:
-          name: mi-jeos-consola-bootable-real-img
+          name: mi-jeos-consola-direct-img
           path: mi-jeos-consola.img
